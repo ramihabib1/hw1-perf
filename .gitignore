@@ -1,0 +1,11 @@
+# personal/local Claude Code settings (not committed)
+.claude/settings.local.json
+
+# sysbench working sets (large, regenerable)
+v1/
+v2/
+test_file.*
+
+# editor/OS noise
+*.swp
+.DS_Store

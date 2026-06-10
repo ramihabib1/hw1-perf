@@ -81,7 +81,15 @@ co-location.
   is a cross-core wakeup (reschedule IPI + pipe-buffer/task-struct cache-line bounce) ≈ 11 µs.
   Under bg load, `select_idle_cpu` finds no idle CPU (returns past line 111) → falls through to
   `prev`/`target` → the partner is co-located with the waker → same-core context switch ≈ 5 µs.
-- (Student to confirm/own the line identification.)
+- **Final connection (confirmed):** `select_task_rq_fair` (fair.c:8579) fast-path line 64 calls
+  `select_idle_sibling`, whose **line 110** `select_idle_cpu` scans the LLC domain for an idle
+  CPU. Idle system → returns an idle sibling → pair spread cross-core → ~11 µs. Loaded → no idle
+  CPU found → returns prev/target → pair co-located same-core → ~5 µs.
+
+### Conclusion — TASK 1 COMPLETE
+Mechanism = scheduler wake-placement (`select_idle_sibling`/`select_idle_cpu`). F ruled out
+(constant cycles/ref-cycles), I ruled out (cross-core-busy still slow), P confirmed by
+placement-controlled toggle + histogram + callgraph + source. Full writeup: `writeup/task1.md`.
 
 ### Kernel-source confirmation
 - File / function (path under /usr/src):

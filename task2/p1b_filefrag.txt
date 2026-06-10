@@ -1,0 +1,2 @@
+/home/ubuntu/v1/test_file.0: 2 extents found
+/home/ubuntu/v2/test_file.0: 1 extent found

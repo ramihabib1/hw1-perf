@@ -62,13 +62,34 @@ Read: does a v2>v1 gap (~8–9%) appear under `madvise` and/or `never` but not `
 That localizes the effect to THP/folio size. If NO gap appears under any mode, the mechanism
 is something else and we keep digging.
 
-## Phase 2 — The discriminating probe: WHERE do the cycles go?
-Same data, same run command → the difference lives in the per-access cost. Find it.
+## Phase 2 — Diagnose with the LECTURER'S technique (caching deck slides 58, 64–65)
+His Redis example: headline counter = **page-faults**; then **count huge-page usage** on the
+fault path with bpftrace ("count, don't eyeball"). We apply the same to the file page cache.
+
+### 2a — perf stat, page-faults FIRST (his slide 58 comparison)
 ```
-( cd ~/v1 && perf stat -e cycles,instructions,minor-faults,dTLB-load-misses,LLC-load-misses $RUN ) 2>&1 | tee perfstat_v1.txt
-( cd ~/v2 && perf stat -e cycles,instructions,minor-faults,dTLB-load-misses,LLC-load-misses $RUN ) 2>&1 | tee perfstat_v2.txt
+( cd ~/v1 && perf stat -e page-faults,minor-faults,dTLB-load-misses,cycles,instructions $RUN ) 2>&1 | tee task2/p2_perfstat_v1.txt
+( cd ~/v2 && perf stat -e page-faults,minor-faults,dTLB-load-misses,cycles,instructions $RUN ) 2>&1 | tee task2/p2_perfstat_v2.txt
 ```
-PREDICT first: which counter, if any, differs between v1 and v2? That counter IS the mechanism.
+Read: does v2 have FEWER page-faults than v1? (instructions ~equal.) Equal page-faults ⇒
+consistent with the missing gap ⇒ go to 2b to learn whether huge pages are used for both/neither.
+
+### 2b — Are huge pages / large folios actually used? (his VM_FAULT_FALLBACK count, slides 64–65)
+Direct view — huge file mappings while each run is in flight:
+```
+( cd ~/v1 && $RUN ) & sleep 2; grep -E 'File|Pmd|Huge|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup | tee task2/p2_smaps_v1.txt; wait
+( cd ~/v2 && $RUN ) & sleep 2; grep -E 'File|Pmd|Huge|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup | tee task2/p2_smaps_v2.txt; wait
+```
+Count the PMD (huge) vs base-page file faults on the read path (analogous to his fallback count):
+```
+BT='kprobe:do_set_pmd { @pmd_huge = count(); } kprobe:set_pte_range { @base = count(); }'
+( cd ~/v1 && $RUN ) & sleep 1; sudo bpftrace -e "$BT" -c "sleep 3" 2>&1 | tee task2/p2_faultcount_v1.txt; wait
+( cd ~/v2 && $RUN ) & sleep 1; sudo bpftrace -e "$BT" -c "sleep 3" 2>&1 | tee task2/p2_faultcount_v2.txt; wait
+```
+(If `do_set_pmd`/`set_pte_range` aren't probeable on this kernel, fall back to counting
+`filemap_fault` and tracing folio order; report what names exist via `grep`.)
+PREDICT first: are huge pages used for v2 but not v1, or for both, or neither? That answers
+WHY the gap is (or isn't) present.
 
 ## Phase 3 — Rule out the seductive wrong answer: disk fragmentation
 v1's small writes fragment the file; v2's 4M writes don't. But is the run even touching disk?

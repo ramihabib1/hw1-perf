@@ -133,9 +133,19 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
 - The reference 8–9% gap requires v2's folios to reach **PMD huge mapping** (FilePmdMapped>0),
   cutting dTLB misses. In this VM that never happens (do_set_pmd never fires). Same trap as the
   lecture's Redis case: THP=always ≠ huge pages actually used.
-- OPEN: why no PMD file mapping, and can we trigger it (the "MALLOC_TOP_PAD moment") to reproduce
-  the gap? → Phase 3 (confirm folio order during prepare; kernel source for the order cap + PMD
-  condition; attempt to force huge pages).
+### Phase 3 results — mechanism confirmed; gap DECOMPOSED
+- **Folio order (3a)** [p3_folios_*]: folios built during prepare v1=7265, v2=3228 ⇒ v1 ~2.3
+  pages/folio, v2 ~5.1 ⇒ v2 builds **~2.2× larger folios.** Direct confirmation of write-size→folio-size.
+- **THP sweep (3b-i)** [p3_thp_sweep]: v2 ~1% > v1 in always/madvise/never — a small, genuine,
+  **THP-independent** edge; no jump to 8–9% in any mode.
+- **1 GiB (3b-ii)** [p3_bigfile]: page-faults v1=17173 vs v2=1301 (**13× fewer** — folio effect
+  scales with size), but dTLB-misses identical (7.41M both), reads/s ~1.5% apart. Folios still sub-PMD.
+- **Decomposition:** the documented 8–9% gap = a small folio/fault term (~1%, which we DO reproduce)
+  + a dTLB/huge-page term (the rest) that is **gated off here** because folios never reach PMD, so
+  FilePmdMapped=0 and dTLB is unchanged. THP mode and file size do not break the sub-PMD ceiling.
+- ROOT CAUSE: prepare block size sets page-cache folio order; the throughput payoff requires those
+  folios to be PMD-huge-mapped (dTLB reduction). On this kernel mmap'd ext4 reads stay sub-PMD →
+  only the ~1% fault term survives. → Phase 4: confirm the folio-order cap + PMD condition in /usr/src.
 
 ### Kernel-source confirmation
 - File / function:

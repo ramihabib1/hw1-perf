@@ -161,10 +161,26 @@ Read: does a v2>v1 reads/s gap appear under any THP mode or at 1 GiB, with FileP
 fewer dTLB-misses? If yes → gap reproduced and tied to huge mapping. If never → gap is genuinely
 dormant in this kernel; we explain it via the sub-PMD folio cap + source.
 
-## Phase 4 — Kernel-source confirmation (/usr/src)
-- Readahead/folio order: `mm/readahead.c` (`page_cache_ra_order`), `mm/filemap.c` (`filemap_fault`, `filemap_map_pages`)
-- Large folios in the page cache + how mmap maps them (TLB consequence)
-Read the order-selection logic; connect it to the `perf stat` counter that differed. **Your call to make.**
+## Phase 4 — Kernel-source confirmation (/usr/src): folio-order cap + PMD condition
+Explain (a) why v2's writes build larger folios, (b) why they stay sub-PMD, (c) why no huge mapping.
+```
+F=$(ls -d /usr/src/linux-* 2>/dev/null | head -1); echo "src=$F"
+# (a/b) folio order selection + cap:
+grep -n 'page_cache_ra_order\|MAX_PAGECACHE_ORDER\|mapping_max_folio' $F/mm/readahead.c $F/mm/filemap.c $F/include/linux/pagemap.h | head
+awk '/page_cache_ra_order\(/{p=1} p{print} /^}/{if(p)exit}' $F/mm/readahead.c > task2/p4_page_cache_ra_order.txt
+# (c) the PMD (huge) file-map path + its gate:
+grep -n 'do_set_pmd' $F/mm/memory.c $F/mm/filemap.c | head
+awk '/^vm_fault_t do_set_pmd\(|do_set_pmd\(struct/{p=1} p{print} /^}/{if(p)exit}' $F/mm/memory.c > task2/p4_do_set_pmd.txt
+# (c) DECISIVE config check — is file-backed THP even compiled in?
+zcat /proc/config.gz 2>/dev/null | grep -E 'READ_ONLY_THP_FOR_FS|TRANSPARENT_HUGEPAGE' || \
+  grep -E 'READ_ONLY_THP_FOR_FS|TRANSPARENT_HUGEPAGE' /boot/config-$(uname -r) | tee task2/p4_kconfig_thp.txt
+wc -l task2/p4_*.txt
+```
+Connect to the data: `page_cache_ra_order` decides folio order from the readahead/write size (why
+v2's 4M writes → larger folios) and caps it (why ≤ a few pages here); `do_set_pmd` only installs a
+huge PMD mapping when the folio is PMD-order AND aligned (why FilePmdMapped=0 with sub-PMD folios);
+if `CONFIG_READ_ONLY_THP_FOR_FS` is **not set**, mmap'd ext4 reads can *never* get PMD file mappings
+→ the dTLB-driven gap is structurally impossible on this kernel. **Student makes the final connection.**
 
 ## Cleanup
 ```

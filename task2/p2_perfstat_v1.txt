@@ -21,41 +21,41 @@ Threads started!
 
 
 File operations:
-    reads/s:                      1869152.62
+    reads/s:                      1882830.28
     writes/s:                     0.00
     fsyncs/s:                     0.00
 
 Throughput:
-    read, MiB/s:                  7301.38
+    read, MiB/s:                  7354.81
     written, MiB/s:               0.00
 
 General statistics:
     total time:                          5.0002s
-    total number of events:              9349397
+    total number of events:              9417768
 
 Latency (ms):
          min:                                    0.00
          avg:                                    0.00
-         max:                                    0.22
+         max:                                    0.93
          95th percentile:                        0.00
-         sum:                                 3233.77
+         sum:                                 3221.33
 
 Threads fairness:
-    events (avg/stddev):           9349397.0000/0.00
-    execution time (avg/stddev):   3.2338/0.00
+    events (avg/stddev):           9417768.0000/0.00
+    execution time (avg/stddev):   3.2213/0.00
 
 
  Performance counter stats for 'sysbench fileio --file-num=1 --file-total-size=64M --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run':
 
               1813      page-faults                                                           
               1813      minor-faults                                                          
-           8700007      dTLB-load-misses                                                      
-       13265901628      cycles                                                                
-        7472617351      instructions                                                          
+           8744015      dTLB-load-misses                                                      
+       13255640893      cycles                                                                
+        7529345671      instructions                                                          
 
-       5.008398862 seconds time elapsed
+       5.008987211 seconds time elapsed
 
-       4.996943000 seconds user
-       0.008003000 seconds sys
+       4.992305000 seconds user
+       0.008995000 seconds sys
 
 

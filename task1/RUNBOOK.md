@@ -34,51 +34,47 @@ Report median / min / spread for each. Effect must be >> run-to-run noise before
 
 ## Phase 2 — Discriminating probes (the three competing mechanisms)
 
-The instruction count barely moves; cycles and wakeup latency are the question.
+> NOTE: This is a KVM guest with NO cpufreq driver and NO cpuidle states (see
+> env_asshipped.txt). The old cpupower knobs below do NOT exist. We probe indirectly.
+> Capture EVERYTHING with `2>&1 | tee` — lat_pipe prints to stderr.
 
-### H1 — CPU frequency scaling (DVFS)
-Prediction: under no load the governor keeps freq low; load pins it high.
-```
-# instructions ~constant, cycles differ?  compare the two conditions:
-perf stat -e cycles,instructions,task-clock $LP                    # no load
-stress-ng --cpu 3 --timeout 20s & sleep 1; perf stat -e cycles,instructions,task-clock $LP; wait
-turbostat --quiet -- $LP                                           # Bzy_MHz / Avg_MHz, no load
-stress-ng --cpu 3 --timeout 20s & sleep 1; turbostat --quiet -- $LP; wait
-```
-Knob test (one variable): force max freq, NO load. If latency drops to the loaded value → DVFS confirmed.
-```
-sudo cpupower frequency-set -g performance
-for i in $(seq 10); do $LP; done | tee h1_perfgov_noload.txt
-sudo cpupower frequency-set -g <original-governor>     # restore!
-```
+`LP=/usr/lib/lmbench/bin/x86_64-linux-gnu/lat_pipe`
 
-### H2 — Idle states / halt-exit latency (C-states; in a guest = HLT VM-exit)
-Prediction: idle CPU enters a deep state; partner wakeup pays exit latency. Load keeps a CPU hot.
-```
-turbostat --quiet -- $LP        # look at C-state residency columns (CPU%c1/c6, etc.), no load vs load
-# knob test: disable deep idle, NO load. latency drops? -> idle-exit latency confirmed.
-sudo cpupower idle-set -D 0     # disable all but shallowest; (or idle-set -d <N> per state)
-for i in $(seq 10); do $LP; done | tee h2_noidle_noload.txt
-sudo cpupower idle-set -E       # re-enable all
-```
+One `perf stat` decomposes both suspects at once:
+- **F (host frequency):** the `GHz` reading (cycles / task-clock). If load vs no-load GHz is
+  ~equal, frequency did not change → F is OUT.
+- **I (HLT idle / wakeup wait):** the gap between wall time and CPU time — perf's
+  `seconds time elapsed` vs `task-clock` / `CPUs utilized`. Lots of wall time with little CPU
+  time = the process spent the round-trip waiting (the wakeup/halt cost). If that wait shrinks
+  under load, I is IN.
 
-### H3 — Scheduler placement / wakeup migration
-Prediction: unloaded, the two pipe ends bounce across idle CPUs (cold cache, cross-CPU IPI);
-under load they get concentrated/co-scheduled (warm).
+### Probe 1 — perf stat decomposition (NO load)
 ```
-perf stat -e context-switches,cpu-migrations $LP                  # no load
-stress-ng --cpu 3 --timeout 20s & sleep 1; perf stat -e context-switches,cpu-migrations $LP; wait
-# ftrace the wakeups/switches for one run:
-sudo trace-cmd record -e sched:sched_wakeup -e sched:sched_switch -e sched:sched_migrate_task $LP
-sudo trace-cmd report | tee h3_sched_noload.txt
-# knob test: pin everything to ONE cpu, no load. effect reproduce?
-taskset -c 0 bash -c "for i in \$(seq 10); do $LP; done" | tee h3_pinned_noload.txt
+perf stat -e task-clock,cycles,instructions,ref-cycles,context-switches,cpu-migrations \
+  $LP 2>&1 | tee task1/p2_perfstat_noload.txt
 ```
+### Probe 2 — perf stat decomposition (WITH load)
+```
+stress-ng --cpu 3 --timeout 30s >/dev/null 2>&1 & sleep 1
+perf stat -e task-clock,cycles,instructions,ref-cycles,context-switches,cpu-migrations \
+  $LP 2>&1 | tee task1/p2_perfstat_load.txt
+wait
+```
+### Probe 3 — pin BOTH pipe ends to one core, NO load (core can never go idle)
+```
+for i in $(seq 5); do taskset -c 0 $LP; done 2>&1 | tee task1/p2_pin1core_noload.txt
+```
+Interpretation (for the analyst, not the runner): if pin-to-one-core reproduces the ~5 µs
+speedup with no bg load, idle-removal is sufficient — but it also makes the core 100% busy,
+so the host may raise frequency too; Probe 1/2's GHz reading disambiguates which it was.
 
-## Phase 4 — Kernel-source confirmation (/usr/src)
-Whichever knob reproduced the loaded latency points you to the subsystem:
-- DVFS → `drivers/cpufreq/` (e.g. `intel_pstate.c`) + the schedutil path `kernel/sched/cpufreq_schedutil.c`
-- idle  → `drivers/cpuidle/` + `drivers/acpi/processor_idle.c`; in a guest look at `cpuidle-haltpoll`
-- sched → `kernel/sched/fair.c` (`select_task_rq_fair`, wake-affine)
+Then `./scripts/vmsync "task1 p2 perfstat + pin"`, report the three files, and STOP.
+If the PMU is unavailable in the guest, `cycles`/`instructions` show `<not supported>` —
+report that; the software `task-clock` / elapsed / CPUs-utilized fields still decompose I.
 
-Find the function, read what it does, explain how it produces the measured numbers. **You make the final connection.**
+## Phase 4 — Kernel-source confirmation (/usr/src) — pick per the winner
+- I (HLT→VMEXIT) → `arch/x86/kernel/process.c` (`default_idle`/`arch_safe_halt`), KVM guest
+  halt path; how a guest HLT becomes a VM exit and the wakeup re-entry.
+- F (host DVFS) → host-side; from the guest, evidence is the `perf stat` GHz delta itself.
+- P (placement) → `kernel/sched/fair.c` (`select_task_rq_fair`, wake-affine).
+Find the function, read it, explain how it produces the measured numbers. **Student makes the call.**

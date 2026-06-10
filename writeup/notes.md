@@ -22,6 +22,16 @@ record the hypotheses that were WRONG and how you killed them — that's most of
 - With-load: median **5.26 µs** (range 4.74–6.39).
 - Effect size vs noise: **2.1× / 5.9 µs gap, >> spread.** Effect is real and stable.
 
+### Prediction (student, before Phase 2 — predict-then-measure)
+- **Bet: I (HLT→VMEXIT) dominates.** Rationale: stress-ng's whole effect is keeping vCPUs
+  from halting; the HLT→host round-trip is the obvious per-wakeup cost in a VM.
+- Caveat on record: the student initially dismissed F as "illogical," but DVFS/turbo is
+  automatic default behavior — so F is NOT dismissed by argument; it must be ruled out with
+  a frequency measurement (`perf stat` GHz). If under load the measured GHz ≈ no-load GHz,
+  F is out and I/P remain.
+- Falsifiable form of the bet: (a) `perf stat` shows instructions/txn ~equal and GHz ~equal
+  load vs no-load; (b) removing idle without bg load reproduces the speedup.
+
 ### Hypotheses — REVISED for the KVM guest (the original cpupower knobs do NOT exist here)
 Phase 0 killed our planned knobs: no cpufreq driver (can't pin frequency), no cpuidle states
 (can't `idle-set`). Both DVFS and idle now live at the host/virtualization boundary and must

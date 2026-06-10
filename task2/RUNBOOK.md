@@ -8,20 +8,24 @@ COMMON="--file-num=1 --file-total-size=64M"
 RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
 ```
 
-## Phase 0 — Environment (capture once)
+## Phase 0 — Environment (capture once)  → task2/p0_env.txt
 ```
-uname -a; free -h; systemd-detect-virt
-mount | grep -E "$(stat -c %m ~)"        # which fs is $HOME on? (ext4? xfs?)
-cat /sys/kernel/mm/transparent_hugepage/enabled
+{ uname -a; echo; free -h; echo; systemd-detect-virt; echo;
+  mount | grep -E "$(stat -c %m ~)"; echo;       # which fs is $HOME on? (ext4? xfs?)
+  echo "THP:"; cat /sys/kernel/mm/transparent_hugepage/enabled;
+  echo "sysbench:"; sysbench --version; } 2>&1 | tee task2/p0_env.txt
 ```
 
-## Phase 1 — Setup + baseline (confirm the gap is real and stable)
+## Phase 1 — Setup + baseline (confirm the gap is real and stable)  → task2/p1_baseline_gap.txt
 ```
 mkdir -p ~/v1 ~/v2
 ( cd ~/v1 && sysbench fileio $COMMON prepare )
 ( cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare )
 # n>=5 each, interleaved, to separate gap from run-to-run noise:
-for i in $(seq 5); do (cd ~/v1 && $RUN) | grep reads/s; (cd ~/v2 && $RUN) | grep reads/s; done | tee baseline_gap.txt
+for i in $(seq 5); do
+  echo "--- iter $i v1 ---"; ( cd ~/v1 && $RUN ) | grep -E 'reads/s|read, MiB';
+  echo "--- iter $i v2 ---"; ( cd ~/v2 && $RUN ) | grep -E 'reads/s|read, MiB';
+done 2>&1 | tee task2/p1_baseline_gap.txt
 ```
 Gap must be stable and > noise. Note: everything that differs was baked in at PREPARE time.
 

@@ -117,15 +117,25 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
   BOTH files regardless of prepare block size, erasing the write-size-dependent folio difference**
   that the gap depends on. Reference env was likely THP=madvise. → Phase 1B diagnoses this.
 
-### Hypotheses (candidates — fill Result after measuring; see task2/RUNBOOK.md)
-| # | Hypothesis | Prediction | Discriminating measurement | Result | Evidence file |
-|---|-----------|-----------|----------------------------|--------|---------------|
-| 1 | Disk fragmentation: v1 small writes → many extents → slower reads | v1 has many more extents; v1 run does disk I/O | `filefrag` extent counts + block I/O during run | | |
-| 2 | Both files fully page-cached → run is RAM-bound, disk layout irrelevant | ~0 block I/O in both runs | `vmtouch` / `block:block_rq_issue` count | | |
-| 3 | Page-cache folio order: 4M prepare builds larger folios → fewer faults / dTLB misses on read | v2 has fewer minor-faults and/or dTLB-load-misses; instructions ~equal | `perf stat minor-faults,dTLB-load-misses` v1 vs v2; folio-order histogram | | |
+### Hypotheses — RESULTS (Phase 2, THP=always as shipped)
+| # | Hypothesis | Discriminating measurement | Result |
+|---|-----------|----------------------------|--------|
+| 1 | Disk fragmentation | filefrag + major-faults | **RULED OUT** — v1=2 extents, v2=1 (trivial); page-faults are 100% MINOR (1813=1813, 821=821), zero major ⇒ fully cached, zero disk I/O ⇒ layout irrelevant. |
+| 3 | Write block size → page-cache folio size → fewer faults | `perf stat page-faults` v1 vs v2 | **CONFIRMED (first link)** — v2 821 vs v1 1813 page-faults (2× fewer). minor-faults≈folios touched ⇒ v1≈9 pages/folio (~36 KB), v2≈20 pages/folio (~80 KB). 4M writes build larger folios. |
+| 3b | …→ fewer dTLB misses → faster reads | `dTLB-load-misses`, `FilePmdMapped`, reads/s | **NOT here** — dTLB identical (8.74M vs 8.75M), FilePmdMapped=0 for BOTH, `do_set_pmd` never fired, reads/s within 0.8%. Larger folios are still sub-PMD (20 ≪ 512 pages) ⇒ 4 KB PTEs ⇒ no dTLB benefit ⇒ no throughput gap. |
 
-### Ruled-out alternatives (explicit)
-- (record here WITH data — e.g. "fragmentation ruled out: v1=N extents but block I/O ≈ 0, so reads never hit disk")
+### Why the gap is absent here (the key finding)
+- The benchmark is **dTLB-bound**: 8.7M dTLB-misses / 9.4M reads ≈ **0.93 miss per read** (4 KB TLB
+  reach ~4 MB ≪ 64 MB working set ⇒ constant thrash). Only HUGE pages (2 MB → 64 MB in ~32 TLB
+  entries) remove this.
+- v2's 4M writes DO build larger folios (proven: 2× fewer faults) but they stay **sub-PMD**, so
+  they're 4 KB-mapped → dTLB unchanged → throughput unchanged.
+- The reference 8–9% gap requires v2's folios to reach **PMD huge mapping** (FilePmdMapped>0),
+  cutting dTLB misses. In this VM that never happens (do_set_pmd never fires). Same trap as the
+  lecture's Redis case: THP=always ≠ huge pages actually used.
+- OPEN: why no PMD file mapping, and can we trigger it (the "MALLOC_TOP_PAD moment") to reproduce
+  the gap? → Phase 3 (confirm folio order during prepare; kernel source for the order cap + PMD
+  condition; attempt to force huge pages).
 
 ### Kernel-source confirmation
 - File / function:

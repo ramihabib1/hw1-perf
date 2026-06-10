@@ -1,0 +1,30 @@
+--- iter 1 v1 ---
+    reads/s:                      1903871.72
+    read, MiB/s:                  7437.00
+--- iter 1 v2 ---
+    reads/s:                      1928142.69
+    read, MiB/s:                  7531.81
+--- iter 2 v1 ---
+    reads/s:                      1927429.41
+    read, MiB/s:                  7529.02
+--- iter 2 v2 ---
+    reads/s:                      1931441.02
+    read, MiB/s:                  7544.69
+--- iter 3 v1 ---
+    reads/s:                      1935611.44
+    read, MiB/s:                  7560.98
+--- iter 3 v2 ---
+    reads/s:                      1877979.23
+    read, MiB/s:                  7335.86
+--- iter 4 v1 ---
+    reads/s:                      1933791.32
+    read, MiB/s:                  7553.87
+--- iter 4 v2 ---
+    reads/s:                      1935906.20
+    read, MiB/s:                  7562.13
+--- iter 5 v1 ---
+    reads/s:                      1933905.20
+    read, MiB/s:                  7554.32
+--- iter 5 v2 ---
+    reads/s:                      1931580.13
+    read, MiB/s:                  7545.23

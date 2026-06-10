@@ -1,0 +1,126 @@
+static int select_idle_sibling(struct task_struct *p, int prev, int target)
+{
+	bool has_idle_core = false;
+	struct sched_domain *sd;
+	unsigned long task_util, util_min, util_max;
+	int i, recent_used_cpu, prev_aff = -1;
+
+	/*
+	 * On asymmetric system, update task utilization because we will check
+	 * that the task fits with CPU's capacity.
+	 */
+	if (sched_asym_cpucap_active()) {
+		sync_entity_load_avg(&p->se);
+		task_util = task_util_est(p);
+		util_min = uclamp_eff_value(p, UCLAMP_MIN);
+		util_max = uclamp_eff_value(p, UCLAMP_MAX);
+	}
+
+	/*
+	 * per-cpu select_rq_mask usage
+	 */
+	lockdep_assert_irqs_disabled();
+
+	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
+	    asym_fits_cpu(task_util, util_min, util_max, target))
+		return target;
+
+	/*
+	 * If the previous CPU is cache affine and idle, don't be stupid:
+	 */
+	if (prev != target && cpus_share_cache(prev, target) &&
+	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(prev, target))
+			return prev;
+
+		prev_aff = prev;
+	}
+
+	/*
+	 * Allow a per-cpu kthread to stack with the wakee if the
+	 * kworker thread and the tasks previous CPUs are the same.
+	 * The assumption is that the wakee queued work for the
+	 * per-cpu kthread that is now complete and the wakeup is
+	 * essentially a sync wakeup. An obvious example of this
+	 * pattern is IO completions.
+	 */
+	if (is_per_cpu_kthread(current) &&
+	    in_task() &&
+	    prev == smp_processor_id() &&
+	    this_rq()->nr_running <= 1 &&
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		return prev;
+	}
+
+	/* Check a recently used CPU as a potential idle candidate: */
+	recent_used_cpu = p->recent_used_cpu;
+	p->recent_used_cpu = prev;
+	if (recent_used_cpu != prev &&
+	    recent_used_cpu != target &&
+	    cpus_share_cache(recent_used_cpu, target) &&
+	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
+	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(recent_used_cpu, target))
+			return recent_used_cpu;
+
+	} else {
+		recent_used_cpu = -1;
+	}
+
+	/*
+	 * For asymmetric CPU capacity systems, our domain of interest is
+	 * sd_asym_cpucapacity rather than sd_llc.
+	 */
+	if (sched_asym_cpucap_active()) {
+		sd = rcu_dereference_all(per_cpu(sd_asym_cpucapacity, target));
+		/*
+		 * On an asymmetric CPU capacity system where an exclusive
+		 * cpuset defines a symmetric island (i.e. one unique
+		 * capacity_orig value through the cpuset), the key will be set
+		 * but the CPUs within that cpuset will not have a domain with
+		 * SD_ASYM_CPUCAPACITY. These should follow the usual symmetric
+		 * capacity path.
+		 */
+		if (sd) {
+			i = select_idle_capacity(p, sd, target);
+			return ((unsigned)i < nr_cpumask_bits) ? i : target;
+		}
+	}
+
+	sd = rcu_dereference_all(per_cpu(sd_llc, target));
+	if (!sd)
+		return target;
+
+	if (sched_smt_active()) {
+		has_idle_core = test_idle_cores(target);
+
+		if (!has_idle_core && cpus_share_cache(prev, target)) {
+			i = select_idle_smt(p, sd, prev);
+			if ((unsigned int)i < nr_cpumask_bits)
+				return i;
+		}
+	}
+
+	i = select_idle_cpu(p, sd, has_idle_core, target);
+	if ((unsigned)i < nr_cpumask_bits)
+		return i;
+
+	/*
+	 * For cluster machines which have lower sharing cache like L2 or
+	 * LLC Tag, we tend to find an idle CPU in the target's cluster
+	 * first. But prev_cpu or recent_used_cpu may also be a good candidate,
+	 * use them if possible when no idle CPU found in select_idle_cpu().
+	 */
+	if ((unsigned int)prev_aff < nr_cpumask_bits)
+		return prev_aff;
+	if ((unsigned int)recent_used_cpu < nr_cpumask_bits)
+		return recent_used_cpu;
+
+	return target;
+}

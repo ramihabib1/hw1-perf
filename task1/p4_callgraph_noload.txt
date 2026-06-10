@@ -1,0 +1,80 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 682K of event 'sched:sched_switch'
+# Event count (approx.): 682111
+#
+# Children      Self  Trace output                                        
+# ........  ........  ....................................................
+#
+    16.63%    16.63%  lat_pipe:77440 [120] S ==> swapper/0:0 [120]
+            |
+            ---0x60deb1a649e5
+               __libc_start_main_impl (inlined)
+               call_init (inlined)
+               __libc_start_call_main
+               0x60deb1a6496b
+               0x60deb1a693f4
+               0x60deb1a68f89
+               0x60deb1a64d26
+               0x60deb1a64be8
+               __libc_read (inlined)
+               __syscall_cancel
+               __internal_syscall_cancel (inlined)
+               entry_SYSCALL_64_after_hwframe
+               do_syscall_64
+               x64_sys_call
+               __x64_sys_read
+               ksys_read
+               vfs_read
+               anon_pipe_read
+               schedule
+               __schedule
+               perf_trace_sched_switch
+
+    14.74%    14.74%  lat_pipe:77439 [120] S ==> swapper/3:0 [120]
+            |
+            ---0x60deb1a649e5
+               __libc_start_main_impl (inlined)
+               call_init (inlined)
+               __libc_start_call_main
+               0x60deb1a6496b
+               0x60deb1a693f4
+               0x60deb1a68fd4
+               0x60deb1a64b10
+               __libc_read (inlined)
+               __syscall_cancel
+               __internal_syscall_cancel (inlined)
+               entry_SYSCALL_64_after_hwframe
+               do_syscall_64
+               x64_sys_call
+               __x64_sys_read
+               ksys_read
+               vfs_read
+               anon_pipe_read
+               schedule
+               __schedule
+               perf_trace_sched_switch
+
+    12.93%    12.93%  lat_pipe:77442 [120] S ==> swapper/0:0 [120]
+            |
+            ---0x59949e3f59e5
+               __libc_start_main_impl (inlined)
+               call_init (inlined)
+               __libc_start_call_main
+               0x59949e3f596b
+               0x59949e3fa3f4
+               |          
+                --12.93%--0x59949e3f9fd4
+                          0x59949e3f5b10
+                          __libc_read (inlined)
+                          __syscall_cancel
+                          __internal_syscall_cancel (inlined)
+                          entry_SYSCALL_64_after_hwframe
+                          do_syscall_64
+                          x64_sys_call
+                          __x64_sys_read
+                          ksys_read
+                          vfs_read

@@ -1,0 +1,75 @@
+vm_fault_t do_set_pmd(struct vm_fault *vmf, struct folio *folio, struct page *page)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	bool write = vmf->flags & FAULT_FLAG_WRITE;
+	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
+	pmd_t entry;
+	vm_fault_t ret = VM_FAULT_FALLBACK;
+
+	/*
+	 * It is too late to allocate a small folio, we already have a large
+	 * folio in the pagecache: especially s390 KVM cannot tolerate any
+	 * PMD mappings, but PTE-mapped THP are fine. So let's simply refuse any
+	 * PMD mappings if THPs are disabled. As we already have a THP,
+	 * behave as if we are forcing a collapse.
+	 */
+	if (thp_disabled_by_hw() || vma_thp_disabled(vma, vma->vm_flags,
+						     /* forced_collapse=*/ true))
+		return ret;
+
+	if (!thp_vma_suitable_order(vma, haddr, PMD_ORDER))
+		return ret;
+
+	if (folio_order(folio) != HPAGE_PMD_ORDER)
+		return ret;
+	page = &folio->page;
+
+	/*
+	 * Just backoff if any subpage of a THP is corrupted otherwise
+	 * the corrupted page may mapped by PMD silently to escape the
+	 * check.  This kind of THP just can be PTE mapped.  Access to
+	 * the corrupted subpage should trigger SIGBUS as expected.
+	 */
+	if (unlikely(folio_test_has_hwpoisoned(folio)))
+		return ret;
+
+	/*
+	 * Archs like ppc64 need additional space to store information
+	 * related to pte entry. Use the preallocated table for that.
+	 */
+	if (arch_needs_pgtable_deposit() && !vmf->prealloc_pte) {
+		vmf->prealloc_pte = pte_alloc_one(vma->vm_mm);
+		if (!vmf->prealloc_pte)
+			return VM_FAULT_OOM;
+	}
+
+	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+	if (unlikely(!pmd_none(*vmf->pmd)))
+		goto out;
+
+	flush_icache_pages(vma, page, HPAGE_PMD_NR);
+
+	entry = folio_mk_pmd(folio, vma->vm_page_prot);
+	if (write)
+		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
+
+	add_mm_counter(vma->vm_mm, mm_counter_file(folio), HPAGE_PMD_NR);
+	folio_add_file_rmap_pmd(folio, page, vma);
+
+	/*
+	 * deposit and withdraw with pmd lock held
+	 */
+	if (arch_needs_pgtable_deposit())
+		deposit_prealloc_pte(vmf);
+
+	set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
+
+	update_mmu_cache_pmd(vma, haddr, vmf->pmd);
+
+	/* fault is handled */
+	ret = 0;
+	count_vm_event(THP_FILE_MAPPED);
+out:
+	spin_unlock(vmf->ptl);
+	return ret;
+}

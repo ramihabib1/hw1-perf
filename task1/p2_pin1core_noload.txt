@@ -1,0 +1,5 @@
+Pipe latency: 5.4472 microseconds
+Pipe latency: 5.3650 microseconds
+Pipe latency: 5.4265 microseconds
+Pipe latency: 5.4146 microseconds
+Pipe latency: 5.4262 microseconds

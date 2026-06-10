@@ -1,0 +1,17 @@
+Pipe latency: 69.1056 microseconds
+
+ Performance counter stats for '/usr/lib/lmbench/bin/x86_64-linux-gnu/lat_pipe':
+
+          28749.27 msec task-clock                                                            
+       73484767995      cycles                                                                
+       26922915348      instructions                                                          
+       54567480720      ref-cycles                                                            
+             33982      context-switches                                                      
+                 6      cpu-migrations                                                        
+
+      29.746661716 seconds time elapsed
+
+      27.719841000 seconds user
+       1.001958000 seconds sys
+
+

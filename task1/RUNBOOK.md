@@ -108,9 +108,50 @@ This gives the wakeup→run delay (direct fingerprint of I) AND the CPU column s
 pipe ends are actually cross-core under load (tests the assumption, doesn't assume it).
 Then `./scripts/vmsync "task1 p2b"`, report the files, STOP.
 
-## Phase 4 — Kernel-source confirmation (/usr/src) — pick per the winner
-- I (HLT→VMEXIT) → `arch/x86/kernel/process.c` (`default_idle`/`arch_safe_halt`), KVM guest
-  halt path; how a guest HLT becomes a VM exit and the wakeup re-entry.
-- F (host DVFS) → host-side; from the guest, evidence is the `perf stat` GHz delta itself.
-- P (placement) → `kernel/sched/fair.c` (`select_task_rq_fair`, wake-affine).
-Find the function, read it, explain how it produces the measured numbers. **Student makes the call.**
+## Phase 4 — Confirm P in kernel source + produce deck-sanctioned evidence
+Winner is **P (scheduler wake-placement)**. Two things the lecturer requires that we still owe:
+(a) confirmation in `/usr/src`, (b) a histogram and a sampled callgraph (assignment text;
+deck slides 32, 66, 69–70).
+
+### Probe 7 — locate the placement logic in /usr/src (mechanical; student interprets)
+```
+ls /usr/src
+F=$(ls -d /usr/src/linux-* 2>/dev/null | head -1); echo "src=$F"
+grep -n 'select_idle_sibling\|wake_affine\|select_task_rq_fair' $F/kernel/sched/fair.c | head
+# dump the two functions for reading:
+sed -n '/^static int\s*$/,/^}/p' /dev/null  # (placeholder)
+awk '/select_idle_sibling\(struct task_struct/{p=1} p{print} /^}/{if(p)exit}' $F/kernel/sched/fair.c > task1/p4_select_idle_sibling.txt
+awk '/select_task_rq_fair\(/{p=1} p{print} /^}/{if(p)exit}'                $F/kernel/sched/fair.c > task1/p4_select_task_rq_fair.txt
+wc -l task1/p4_select_*.txt
+```
+(If awk ranges miss, just `grep -n` the function start lines and `sed -n 'START,+120p'` to dump.)
+
+### Probe 8 — sampled callgraph of the wakeup/switch path (deck's scheduler recipe, slide 69)
+```
+LP=/usr/lib/lmbench/bin/x86_64-linux-gnu/lat_pipe
+sudo perf record -e sched:sched_switch -g -o task1/p4_cs_noload.data -- \
+  bash -c 'for i in 1 2 3; do '"$LP"'; done' 2>&1 | tail -2
+sudo perf report -i task1/p4_cs_noload.data --stdio 2>/dev/null | head -80 \
+  | tee task1/p4_callgraph_noload.txt
+sudo chown ubuntu task1/p4_cs_noload.data task1/p4_callgraph_noload.txt
+# keep the .data only if small (<50M); else delete after capturing the report.
+```
+We want to SEE the no-load wakeup go through `try_to_wake_up → select_task_rq → ttwu_queue`
+(remote/cross-CPU), i.e. the placement machinery, in the callgraph.
+
+### Probe 9 — off-CPU latency histogram, no-load vs load (the assignment's "histogram", slide 32)
+Off-CPU time per pipe block = sched_switch(out, blocked) → sched_switch(in). It contains the
+wakeup cost; its distribution should shift between conditions.
+```
+BT='tracepoint:sched:sched_switch /args->prev_comm=="lat_pipe" && args->prev_state/ { @t[args->prev_pid]=nsecs; }
+tracepoint:sched:sched_switch /args->next_comm=="lat_pipe"/ { $s=@t[args->next_pid]; if($s){ @off_us=hist((nsecs-$s)/1000); delete(@t[args->next_pid]); } }'
+# no load (run ~8s while lat_pipe runs in another shell, or wrap):
+sudo bpftrace -e "$BT" -c "$LP" 2>&1 | tee task1/p4_offcpu_hist_noload.txt
+# with load:
+stress-ng --cpu 3 --timeout 20s >/dev/null 2>&1 & sleep 1
+sudo bpftrace -e "$BT" -c "$LP" 2>&1 | tee task1/p4_offcpu_hist_load.txt
+wait
+```
+Then `./scripts/vmsync "task1 p4 source + callgraph + histogram"`, report the files, STOP.
+Note for writeup: governor/idle pinning (deck slide 65) is N/A here — the guest exposes no
+cpufreq/cpuidle; we instead confirmed frequency was constant via cycles/ref-cycles.

@@ -147,8 +147,19 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
   folios to be PMD-huge-mapped (dTLB reduction). On this kernel mmap'd ext4 reads stay sub-PMD →
   only the ~1% fault term survives. → Phase 4: confirm the folio-order cap + PMD condition in /usr/src.
 
-### Kernel-source confirmation
-- File / function:
-- Mechanism:
+### Kernel-source confirmation  [p4_*]
+- `mm/readahead.c:467 page_cache_ra_order`: `new_order = min(mapping_max_folio_order,
+  ilog2(ra->size))` ⇒ folio order capped by I/O request size (v2 4M writes→larger; v1→smaller;
+  random reads never grow ra->size).
+- `mm/memory.c:5408 do_set_pmd`: installs a 2 MiB PMD only for PMD-order aligned folios.
+- **Decisive:** `/boot/config-7.0.0-15-generic` → `# CONFIG_READ_ONLY_THP_FOR_FS is not set`
+  (CONFIG_TRANSPARENT_HUGEPAGE=y). File-backed THP for regular FS NOT compiled in ⇒ mmap'd ext4
+  reads can NEVER get a PMD mapping ⇒ FilePmdMapped=0 structurally ⇒ dTLB win unreachable ⇒
+  8–9% gap impossible on this kernel.
 
-### Conclusion (write last)
+### Conclusion — TASK 2 COMPLETE
+Root cause = page-cache folio size set by prepare block size (v2 4M writes → ~2.2× larger folios
+→ 2–13× fewer page-faults, confirmed). The 8–9% throughput magnitude is a dTLB/huge-page term
+that needs PMD mapping of those folios; structurally disabled here (CONFIG_READ_ONLY_THP_FOR_FS
+unset), so only the ~1% folio/fault term reproduces. Fragmentation ruled out (zero disk I/O).
+Full writeup: `writeup/task2.md`.

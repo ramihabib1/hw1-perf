@@ -7,25 +7,31 @@ record the hypotheses that were WRONG and how you killed them — that's most of
 
 ## Task 1 — Pipe latency improves under background CPU load
 
-### Environment (as shipped, before any changes)
-- CPU model / cores / threads:
-- Governor / driver / turbo state:
-- perf_event_paranoid:
-- Kernel version (`uname -r`):
+### Environment (as shipped, before any changes)  [evidence: task1/env_asshipped.txt]
+- CPU model / cores / threads: Intel Xeon Gold 5420+ (Sapphire Rapids), 4 vCPUs, 1 thread/core, each vCPU presented as its own socket (no SMT siblings). NUMA: 1 node.
+- **KVM full-virt guest** (`systemd-detect-virt = kvm`). cpu MHz pinned at 2000 for all.
+- **cpufreq driver: NONE** — "no or unknown cpufreq driver active"; governors Not Available; boost not supported. ⇒ guest cannot read or set frequency; DVFS is host-side and invisible here.
+- **cpuidle driver: NONE**, "No idle states"; governor menu (nothing to govern). ⇒ guest idle = default arch halt → HLT → VMEXIT to host.
+- perf_event_paranoid: -1 (full perf access, incl. kernel).
+- Kernel: 7.0.0-15-generic (Ubuntu, PREEMPT_DYNAMIC).
 
-### Baseline + variance
-- Command:
-- Runs (n=  ), reported as (mean/median/min, and why):
-- No-load result:
-- With-load result:
-- Effect size vs noise:
+### Baseline + variance  [evidence: logs/task1_20260610_1427.log; note: lat_pipe prints to stderr, so per-file tee was empty — numbers from the script log]
+- Command: `lat_pipe` ×10, no-load and with `stress-ng --cpu 3`.
+- Reported as median (robust to the occasional warm-up outlier) + min–max spread.
+- No-load: median **11.12 µs** (range 9.88–11.20, tight cluster ~11.1).
+- With-load: median **5.26 µs** (range 4.74–6.39).
+- Effect size vs noise: **2.1× / 5.9 µs gap, >> spread.** Effect is real and stable.
 
-### Hypotheses (candidates — fill Result after measuring; see task1/RUNBOOK.md)
-| # | Hypothesis | Prediction (counter/behavior) | Discriminating measurement | Result: ruled in / out | Evidence file |
+### Hypotheses — REVISED for the KVM guest (the original cpupower knobs do NOT exist here)
+Phase 0 killed our planned knobs: no cpufreq driver (can't pin frequency), no cpuidle states
+(can't `idle-set`). Both DVFS and idle now live at the host/virtualization boundary and must
+be probed indirectly from inside the guest. Revised discriminators:
+
+| # | Hypothesis | Prediction (counter/behavior) | In-guest discriminating measurement | Result: ruled in / out | Evidence file |
 |---|-----------|-------------------------------|----------------------------|------------------------|---------------|
-| 1 | DVFS: governor keeps freq low under bursty pipe load; bg load pins freq high | cycles/run higher unloaded; instructions ~equal; Bzy_MHz lower unloaded | `perf stat cycles,instructions` + `turbostat`; knob: `-g performance` no-load | | |
-| 2 | Idle/halt-exit latency: idle CPU enters deep C-state (guest: HLT VM-exit); partner wakeup pays exit cost | C-state residency high unloaded; latency falls when deep idle disabled | `turbostat` C-state cols; knob: `cpupower idle-set -D 0` no-load | | |
-| 3 | Scheduler placement: unloaded pair bounces across idle CPUs (cold, cross-CPU IPI); load co-locates | more cpu-migrations unloaded; pinning reproduces low latency | `perf stat cpu-migrations`; `trace-cmd sched_*`; knob: `taskset -c 0` | | |
+| F | Host DVFS: physical core runs slow when guest is idle-ish; bg load makes host raise freq | `cycles`(GHz) lower unloaded; **instructions/transaction equal**; unhalted-cycles/txn equal | `perf stat cycles,ref-cycles,instructions,task-clock` no-load vs load | | |
+| I | HLT→VMEXIT: idle reader HLTs → VMEXIT; wakeup pays VMENTER (+ host reschedule). Load = vCPUs never HLT | wakeup→run latency larger unloaded; keeping the pipe core busy (no bg hogs) reproduces the speedup | `perf sched` wakeup latency; **pin both ends to one core** `taskset -c 0` (core never idles) | | |
+| P | Scheduler placement: unloaded pair bounces across idle vCPUs (cold, cross-vCPU IPI); load co-locates | more cpu-migrations unloaded; pinning both ends reproduces low latency | `perf stat cpu-migrations`; `sched:*` trace | | |
 
 ### Kernel-source confirmation
 - File / function (path under /usr/src):

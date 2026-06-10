@@ -1,0 +1,30 @@
+Script started on 2026-06-10 14:27:48+00:00 [COMMAND="bash /tmp/task1_p01.sh" <not executed on terminal>]
+############ PHASE 0 — environment as shipped ############
+wrote task1/env_asshipped.txt
+############ PHASE 1 — baseline no-load (n=10) ############
+# Task1 Phase 1 — lat_pipe, NO load, n=10 — 2026-06-10T14:27:48+00:00
+Pipe latency: 11.2042 microseconds
+Pipe latency: 10.4985 microseconds
+Pipe latency: 11.1315 microseconds
+Pipe latency: 11.1770 microseconds
+Pipe latency: 11.1627 microseconds
+Pipe latency: 11.1287 microseconds
+Pipe latency: 11.1157 microseconds
+Pipe latency: 11.0622 microseconds
+Pipe latency: 10.5657 microseconds
+Pipe latency: 9.8751 microseconds
+############ PHASE 1 — baseline with load: stress-ng --cpu 3 (n=10) ############
+# Task1 Phase 1 — lat_pipe, WITH load (stress-ng --cpu 3), n=10 — 2026-06-10T14:28:04+00:00
+Pipe latency: 5.2355 microseconds
+Pipe latency: 5.6613 microseconds
+Pipe latency: 5.2755 microseconds
+Pipe latency: 6.3949 microseconds
+Pipe latency: 5.5291 microseconds
+Pipe latency: 5.5314 microseconds
+Pipe latency: 4.7368 microseconds
+Pipe latency: 4.9441 microseconds
+Pipe latency: 5.0993 microseconds
+Pipe latency: 4.8185 microseconds
+############ DONE ############
+
+Script done on 2026-06-10 14:30:34+00:00 [COMMAND_EXIT_CODE="0"]

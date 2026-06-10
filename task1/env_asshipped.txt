@@ -1,0 +1,113 @@
+# Task1 Phase 0 — environment as shipped — 2026-06-10T14:27:48+00:00
+
+=== uname -a ===
+Linux course-08 7.0.0-15-generic #15-Ubuntu SMP PREEMPT_DYNAMIC Wed Apr 22 16:06:43 UTC 2026 x86_64 GNU/Linux
+
+=== systemd-detect-virt ===
+kvm
+
+=== nproc ===
+4
+
+=== lscpu ===
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 57 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  4
+On-line CPU(s) list:                     0-3
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Xeon(R) Gold 5420+
+CPU family:                              6
+Model:                                   143
+Thread(s) per core:                      1
+Core(s) per socket:                      1
+Socket(s):                               4
+Stepping:                                8
+BogoMIPS:                                4000.00
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts mmx fxsr sse sse2 ss syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq dtes64 vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd arat vnmi avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect cldemote movdiri movdir64b fsrm md_clear serialize tsxldtrk amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities
+Virtualization:                          VT-x
+Hypervisor vendor:                       KVM
+Virtualization type:                     full
+L1d cache:                               128 KiB (4 instances)
+L1i cache:                               128 KiB (4 instances)
+L2 cache:                                16 MiB (4 instances)
+L3 cache:                                64 MiB (4 instances)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-3
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Mitigation; TSX disabled
+Vulnerability Vmscape:                   Not affected
+
+=== /proc/cpuinfo (model name|MHz) ===
+model name	: Intel(R) Xeon(R) Gold 5420+
+cpu MHz		: 2000.000
+model name	: Intel(R) Xeon(R) Gold 5420+
+cpu MHz		: 2000.000
+model name	: Intel(R) Xeon(R) Gold 5420+
+cpu MHz		: 2000.000
+model name	: Intel(R) Xeon(R) Gold 5420+
+cpu MHz		: 2000.000
+
+=== cpupower frequency-info ===
+analyzing CPU 3:
+  no or unknown cpufreq driver is active on this CPU
+  CPUs which run at the same hardware frequency: Not Available
+  CPUs which need to have their frequency coordinated by software: Not Available
+  maximum transition latency:  Cannot determine or is not supported.
+Not Available
+  available cpufreq governors: Not Available
+  Unable to determine current policy
+  current CPU frequency:  Unable to call to kernel
+  boost state support:
+    Supported: no
+    Active: no
+
+=== cpupower idle-info ===
+CPUidle driver: none
+CPUidle governor: menu
+analyzing CPU 3:
+
+CPU 3: No idle states
+
+
+=== cpuidle state names ===
+
+=== perf_event_paranoid ===
+-1
+
+=== ls -la ~ ===
+total 96
+drwxr-x--- 10 ubuntu ubuntu  4096 Jun 10 14:23 .
+drwxr-xr-x  3 root   root    4096 May 22 15:07 ..
+-rw-------  1 ubuntu ubuntu   376 Jun  9 18:56 .bash_history
+-rw-r--r--  1 ubuntu ubuntu   220 Feb 13 12:16 .bash_logout
+-rw-r--r--  1 ubuntu ubuntu  3771 Feb 13 12:16 .bashrc
+drwx------  3 ubuntu ubuntu  4096 Jun 10 13:42 .cache
+drwxrwxr-x 10 ubuntu ubuntu  4096 Jun 10 14:27 .claude
+-rw-------  1 ubuntu ubuntu 27468 Jun 10 14:23 .claude.json
+drwxrwxr-x  3 ubuntu ubuntu  4096 Jun 10 14:22 .config
+drwxrwxr-x  6 ubuntu ubuntu  4096 Jun 10 14:06 .git
+-rw-rw-r--  1 ubuntu ubuntu   181 Jun 10 14:23 .gitconfig
+drwxrwxr-x  3 ubuntu ubuntu  4096 Jun 10 13:43 .local
+drwxrwxr-x  4 ubuntu ubuntu  4096 Jun 10 13:42 .npm
+-rw-r--r--  1 ubuntu ubuntu   807 Feb 13 12:16 .profile
+drwx------  2 ubuntu ubuntu  4096 May 22 15:09 .ssh
+drwxr-xr-x 10 ubuntu ubuntu  4096 Jun 10 14:16 hw1
+-rw-r--r--  1 ubuntu ubuntu  4130 Jun  9 16:37 hw1_workspace.zip

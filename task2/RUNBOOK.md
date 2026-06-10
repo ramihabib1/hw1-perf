@@ -29,6 +29,39 @@ done 2>&1 | tee task2/p1_baseline_gap.txt
 ```
 Gap must be stable and > noise. Note: everything that differs was baked in at PREPARE time.
 
+## Phase 1B — Diagnose the MISSING gap (the gap did not reproduce under THP=always)
+The Phase 1 baseline showed v1 ≈ v2 (no 8–9% gap). Before anything else, find out why.
+
+### Sanity — were the two files actually prepared differently?
+```
+filefrag ~/v1/test_file.0 ~/v2/test_file.0 2>&1 | tee task2/p1b_filefrag.txt
+```
+(Expect v1 to have many more extents than v2. Confirms the prepare block-size difference took.)
+
+### Decisive — sweep THP and see if the gap appears (toggle-the-effect)
+Suspect: THP=always gives large folios to BOTH files, erasing the write-size difference.
+For each THP mode, drop caches, re-prepare under that mode, re-run:
+```
+COMMON="--file-num=1 --file-total-size=64M"
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+for thp in always madvise never; do
+  echo $thp | sudo tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+  sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+  rm -rf ~/v1 ~/v2; mkdir -p ~/v1 ~/v2
+  ( cd ~/v1 && sysbench fileio $COMMON prepare ) >/dev/null 2>&1
+  ( cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare ) >/dev/null 2>&1
+  echo "=== THP=$thp ==="
+  for i in 1 2 3; do
+    printf 'v1 '; ( cd ~/v1 && $RUN ) | grep -oP 'reads/s:\s*\K[0-9.]+'
+    printf 'v2 '; ( cd ~/v2 && $RUN ) | grep -oP 'reads/s:\s*\K[0-9.]+'
+  done
+done 2>&1 | tee task2/p1b_thp_sweep.txt
+echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null   # restore as-shipped
+```
+Read: does a v2>v1 gap (~8–9%) appear under `madvise` and/or `never` but not `always`?
+That localizes the effect to THP/folio size. If NO gap appears under any mode, the mechanism
+is something else and we keep digging.
+
 ## Phase 2 — The discriminating probe: WHERE do the cycles go?
 Same data, same run command → the difference lives in the per-access cost. Find it.
 ```

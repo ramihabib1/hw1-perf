@@ -102,13 +102,20 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
 
 ## Task 2 — Random-read gap from prepare block size (v1 vs v2)
 
-### Environment
-(same fields as above)
+### Environment  [task2/p0_env.txt]
+- Same KVM guest, kernel 7.0.0-15. **RAM 7.7 GiB** (assignment said 16; irrelevant — 64 MiB
+  caches fine). $HOME on **ext4** (`/dev/vda1`, opts incl. `discard`, `commit=30`).
+- **THP = [always]** ← prime suspect for the missing gap.
+- sysbench 1.0.20.
 
-### Baseline + variance
-- v1 reads/s (n=  ):
-- v2 reads/s (n=  ):
-- Gap vs run-to-run noise:
+### Baseline + variance  [task2/p1_baseline_gap.txt]  ⚠ GAP DID NOT REPRODUCE
+- v1 reads/s (n=5): median **1,933,791** (1.904–1.936 M)
+- v2 reads/s (n=5): median **1,931,441** (1.878–1.936 M)
+- Gap: **~0% (v2 marginally slower).** Assignment expects v2 +8–9%. The effect is ABSENT here.
+- Discipline: cannot investigate an unreproducible effect. Question flips to: WHY is the gap
+  absent in this environment? Leading hypothesis: **THP=always gives large folios/huge pages to
+  BOTH files regardless of prepare block size, erasing the write-size-dependent folio difference**
+  that the gap depends on. Reference env was likely THP=madvise. → Phase 1B diagnoses this.
 
 ### Hypotheses (candidates — fill Result after measuring; see task2/RUNBOOK.md)
 | # | Hypothesis | Prediction | Discriminating measurement | Result | Evidence file |

@@ -72,6 +72,42 @@ Then `./scripts/vmsync "task1 p2 perfstat + pin"`, report the three files, and S
 If the PMU is unavailable in the guest, `cycles`/`instructions` show `<not supported>` —
 report that; the software `task-clock` / elapsed / CPUs-utilized fields still decompose I.
 
+## Phase 2B — Isolate idle (I) from placement (P), + direct wakeup latency
+`LP=/usr/lib/lmbench/bin/x86_64-linux-gnu/lat_pipe`
+
+### Probe 4 — cross-core, cores allowed to go IDLE (pipe on cpus 0,1, no load)
+```
+for i in $(seq 5); do taskset -c 0,1 $LP; done 2>&1 | tee task1/p2b_pin2core_idle.txt
+```
+### Probe 5 — cross-core, cores kept BUSY (one spinner pinned to each of 0,1)
+Same placement as Probe 4; the ONLY change is the cores never idle.
+```
+taskset -c 0 stress-ng --cpu 1 --timeout 40s >/dev/null 2>&1 &
+taskset -c 1 stress-ng --cpu 1 --timeout 40s >/dev/null 2>&1 &
+sleep 1
+for i in $(seq 5); do taskset -c 0,1 $LP; done 2>&1 | tee task1/p2b_pin2core_busy.txt
+wait
+```
+Decision: Probe4 slow (~11) + Probe5 fast (~5) ⇒ idle is the cause, placement held constant
+⇒ **P ruled out, I ruled in.** If Probe5 is also ~11, idle is NOT sufficient and P is back in.
+
+### Probe 6 — direct wakeup latency + actual CPU placement (no load vs load)
+```
+# no load:
+perf sched record -o p2b_sched_noload.data -- bash -c 'for i in $(seq 3); do '"$LP"'; done' 2>&1 | tail -2
+perf sched latency  -i p2b_sched_noload.data 2>&1 | tee task1/p2b_sched_latency_noload.txt
+perf sched timehist -i p2b_sched_noload.data 2>&1 | head -40 | tee task1/p2b_sched_timehist_noload.txt
+# with load:
+stress-ng --cpu 3 --timeout 40s >/dev/null 2>&1 & sleep 1
+perf sched record -o p2b_sched_load.data -- bash -c 'for i in $(seq 3); do '"$LP"'; done' 2>&1 | tail -2
+perf sched latency  -i p2b_sched_load.data 2>&1 | tee task1/p2b_sched_latency_load.txt
+perf sched timehist -i p2b_sched_load.data 2>&1 | head -40 | tee task1/p2b_sched_timehist_load.txt
+wait
+```
+This gives the wakeup→run delay (direct fingerprint of I) AND the CPU column shows whether the
+pipe ends are actually cross-core under load (tests the assumption, doesn't assume it).
+Then `./scripts/vmsync "task1 p2b"`, report the files, STOP.
+
 ## Phase 4 — Kernel-source confirmation (/usr/src) — pick per the winner
 - I (HLT→VMEXIT) → `arch/x86/kernel/process.c` (`default_idle`/`arch_safe_halt`), KVM guest
   halt path; how a guest HLT becomes a VM exit and the wakeup re-entry.

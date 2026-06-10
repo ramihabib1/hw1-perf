@@ -41,14 +41,14 @@ be probed indirectly from inside the guest. Revised discriminators:
 |---|-----------|-------------------------------|----------------------------|------------------------|---------------|
 | F | Host DVFS: physical core runs slow when guest is idle-ish; bg load makes host raise freq | `cycles`(GHz) lower unloaded; **instructions/transaction equal**; unhalted-cycles/txn equal | `perf stat cycles,ref-cycles,instructions,task-clock` no-load vs load | **RULED OUT** — cycles/ref-cycles = 1.347 in BOTH conditions ⇒ when-running frequency identical (~2.7 GHz). Frequency does not change. | p2_perfstat_{noload,load}.txt |
 | I | HLT→VMEXIT: idle reader HLTs → VMEXIT; wakeup pays VMENTER (+ host reschedule). Load = vCPUs never HLT | keeping the pipe core busy (no bg hogs) reproduces the speedup | **pin both ends to one core** `taskset -c 0` (core never idles) | **RULED IN (pending /usr/src)** — pin-to-one-core, NO load = 5.42 µs ≈ loaded 5.26 µs (vs unpinned no-load 11.1 µs). Idle removal alone reproduces the effect. | p2_pin1core_noload.txt |
-| P | Scheduler placement: unloaded pair bounces across idle vCPUs (cold, cross-vCPU IPI); load co-locates | more cpu-migrations unloaded; pinning both ends reproduces low latency | `perf stat cpu-migrations`; `sched:*` trace | **RULED OUT** — loaded case is STILL cross-core yet fast (5.3 µs); the only feature unique to the slow case is the target vCPU being HALTED, not cross-CPU placement. | p2_perfstat_load.txt (migrations) |
+| P | Scheduler placement: unloaded pair bounces across idle vCPUs (cold, cross-vCPU IPI); load co-locates | more cpu-migrations unloaded; pinning both ends reproduces low latency | `perf stat cpu-migrations`; `sched:*` trace | **NOT YET RULED OUT** — pin-to-one-core changed TWO variables (idle AND placement); and the "loaded case is cross-core" rescue was an UNMEASURED assumption. Need a placement-controlled experiment (Phase 2B). | (pending) |
 
-**Verdict (pending student confirmation + kernel source):** the speedup is the **HLT/idle
-wakeup cost (I)**. Every fast case (loaded, pinned) shares "target core not halted"; the slow
-baseline's only distinguishing feature is the target vCPU idle→HLT. Frequency (F) ruled out by
-the constant cycles/ref-cycles ratio; placement (P) ruled out because the loaded case is still
-cross-core but fast. Caveat: perf-stat latency (~69 µs) and totals are perf-overhead/calibration
-artifacts and are NOT compared across runs — only the frequency RATIO and the pin result are used.
+**Verdict (PROVISIONAL — P still open):** F is ruled out by the constant cycles/ref-cycles
+ratio (1.347 both conditions ⇒ when-running frequency identical). I is strongly indicated (pin
+reproduces the speedup) but is **entangled with P** until we isolate idle from placement.
+Phase 2B isolates them by holding placement = cross-core and flipping only idle. Caveat:
+perf-stat latency (~69 µs) and totals are perf-overhead/calibration artifacts, NOT compared
+across runs — only the frequency RATIO and the pin result are used.
 
 ### Kernel-source confirmation
 - File / function (path under /usr/src):

@@ -1,0 +1,48 @@
+
+ -------------------------------------------------------------------------------------------------------------------------------------------
+  Task                  |   Runtime ms  |  Count   | Avg delay ms    | Max delay ms    | Max delay start           | Max delay end          |
+ -------------------------------------------------------------------------------------------------------------------------------------------
+  kworker/1:0-eve:67382 |      0.050 ms |        7 | avg:   0.168 ms | max:   0.568 ms | max start: 1642288.966757 s | max end: 1642288.967325 s
+  kworker/2:2-eve:67633 |      0.130 ms |       22 | avg:   0.147 ms | max:   1.997 ms | max start: 1642286.995758 s | max end: 1642286.997754 s
+  kworker/u20:2-e:67658 |      0.117 ms |        3 | avg:   0.100 ms | max:   0.160 ms | max start: 1642285.563755 s | max end: 1642285.563916 s
+  Bun Pool 0:75648      |      0.169 ms |       11 | avg:   0.066 ms | max:   0.657 ms | max start: 1642289.870115 s | max end: 1642289.870772 s
+  JITWorker:76568       |     77.669 ms |       47 | avg:   0.050 ms | max:   1.046 ms | max start: 1642287.871718 s | max end: 1642287.872764 s
+  ksoftirqd/1:25        |      0.028 ms |        2 | avg:   0.049 ms | max:   0.094 ms | max start: 1642285.441768 s | max end: 1642285.441862 s
+  rcu_preempt:15        |      0.405 ms |       92 | avg:   0.047 ms | max:   1.003 ms | max start: 1642286.993753 s | max end: 1642286.994756 s
+  tail:76643            |      0.076 ms |        3 | avg:   0.033 ms | max:   0.083 ms | max start: 1642289.625095 s | max end: 1642289.625178 s
+  sshd-session:75619    |      3.295 ms |      120 | avg:   0.022 ms | max:   0.931 ms | max start: 1642290.877843 s | max end: 1642290.878774 s
+  Bun Pool 2:75651      |      0.153 ms |       11 | avg:   0.017 ms | max:   0.058 ms | max start: 1642287.870183 s | max end: 1642287.870241 s
+  kworker/3:1-mm_:75509 |      0.057 ms |        8 | avg:   0.017 ms | max:   0.088 ms | max start: 1642288.952756 s | max end: 1642288.952844 s
+  seq:76648             |      2.619 ms |        2 | avg:   0.016 ms | max:   0.022 ms | max start: 1642285.441862 s | max end: 1642285.441884 s
+  HeapHelper:(3)        |     65.326 ms |     4157 | avg:   0.014 ms | max:   2.311 ms | max start: 1642289.651445 s | max end: 1642289.653756 s
+  kworker/u18:1-e:74674 |      1.998 ms |       45 | avg:   0.012 ms | max:   0.073 ms | max start: 1642288.319831 s | max end: 1642288.319904 s
+  bash:76646            |      2.506 ms |        6 | avg:   0.011 ms | max:   0.015 ms | max start: 1642289.625206 s | max end: 1642289.625221 s
+  gmain:(3)             |      0.226 ms |        5 | avg:   0.011 ms | max:   0.012 ms | max start: 1642286.137750 s | max end: 1642286.137763 s
+  Bun Pool 3:75652      |      0.111 ms |        9 | avg:   0.010 ms | max:   0.027 ms | max start: 1642286.474343 s | max end: 1642286.474369 s
+  kworker/u18:3-e:74297 |      0.254 ms |       10 | avg:   0.010 ms | max:   0.016 ms | max start: 1642286.777734 s | max end: 1642286.777750 s
+  kcompactd0:54         |      0.064 ms |       11 | avg:   0.009 ms | max:   0.014 ms | max start: 1642289.840753 s | max end: 1642289.840767 s
+  multipathd:(2)        |      0.201 ms |       10 | avg:   0.009 ms | max:   0.012 ms | max start: 1642288.313306 s | max end: 1642288.313318 s
+  HTTP Client:75650     |      0.020 ms |        1 | avg:   0.008 ms | max:   0.008 ms | max start: 1642288.371157 s | max end: 1642288.371165 s
+  cron:1257             |      0.030 ms |        1 | avg:   0.008 ms | max:   0.008 ms | max start: 1642290.034336 s | max end: 1642290.034345 s
+  kworker/u19:0-e:67224 |      0.314 ms |       15 | avg:   0.008 ms | max:   0.012 ms | max start: 1642285.582432 s | max end: 1642285.582444 s
+  chronyd:9319          |      0.397 ms |       17 | avg:   0.008 ms | max:   0.010 ms | max start: 1642285.937291 s | max end: 1642285.937301 s
+  systemd-journal:66673 |      0.040 ms |        1 | avg:   0.007 ms | max:   0.007 ms | max start: 1642285.603432 s | max end: 1642285.603439 s
+  Bun Pool 1:75649      |      0.206 ms |       15 | avg:   0.007 ms | max:   0.013 ms | max start: 1642285.474269 s | max end: 1642285.474282 s
+  claude:(2)            |    311.599 ms |     4454 | avg:   0.007 ms | max:   0.710 ms | max start: 1642285.449043 s | max end: 1642285.449754 s
+  perf:(2)              |     99.929 ms |       73 | avg:   0.007 ms | max:   0.052 ms | max start: 1642287.646754 s | max end: 1642287.646807 s
+  kworker/u17:4-f:74299 |      0.013 ms |        1 | avg:   0.007 ms | max:   0.007 ms | max start: 1642288.824754 s | max end: 1642288.824761 s
+  kworker/0:0-mm_:74552 |      0.107 ms |       14 | avg:   0.007 ms | max:   0.024 ms | max start: 1642287.932755 s | max end: 1642287.932779 s
+  kworker/1:0H-kb:27    |      0.031 ms |        1 | avg:   0.006 ms | max:   0.006 ms | max start: 1642288.314274 s | max end: 1642288.314279 s
+  migration/0:18        |      0.019 ms |        2 | avg:   0.005 ms | max:   0.007 ms | max start: 1642288.237098 s | max end: 1642288.237105 s
+  migration/2:30        |      0.027 ms |        3 | avg:   0.005 ms | max:   0.006 ms | max start: 1642288.241097 s | max end: 1642288.241103 s
+  ksoftirqd/0:14        |      0.022 ms |        4 | avg:   0.005 ms | max:   0.009 ms | max start: 1642288.952759 s | max end: 1642288.952768 s
+  migration/3:36        |      0.019 ms |        2 | avg:   0.005 ms | max:   0.006 ms | max start: 1642288.242097 s | max end: 1642288.242103 s
+  lat_pipe:(9)          |   4675.642 ms |   727548 | avg:   0.004 ms | max:   1.449 ms | max start: 1642286.189378 s | max end: 1642286.190827 s
+  migration/1:24        |      0.014 ms |        2 | avg:   0.004 ms | max:   0.005 ms | max start: 1642288.240097 s | max end: 1642288.240102 s
+  kworker/2:1H-kb:425   |      0.005 ms |        1 | avg:   0.003 ms | max:   0.003 ms | max start: 1642290.872753 s | max end: 1642290.872756 s
+  ksoftirqd/3:37        |      0.010 ms |        2 | avg:   0.003 ms | max:   0.003 ms | max start: 1642289.083761 s | max end: 1642289.083764 s
+ -----------------------------------------------------------------------------------------------------------------
+  TOTAL:                |   5243.903 ms |   736738 |
+ ---------------------------------------------------
+  INFO: 0.000% context switch bugs (1 out of 689459)
+

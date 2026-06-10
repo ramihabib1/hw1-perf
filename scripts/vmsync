@@ -1,0 +1,16 @@
+#!/bin/sh
+# VM-side sync helper. Run from anywhere: ~/hw1/scripts/vmsync "what this probe tested"
+# Pulls latest, stages ONLY raw output dirs (never notes/writeup), commits, pushes.
+set -e
+cd "$(dirname "$0")/.." || exit 1
+
+msg="${1:-probe output}"
+git pull --rebase --autostash
+git add task1 task2 logs
+if git diff --cached --quiet; then
+  echo "vmsync: nothing new to commit"
+  exit 0
+fi
+git commit -m "vm: ${msg}  [$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
+git push
+echo "vmsync: pushed."

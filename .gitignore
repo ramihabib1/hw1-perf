@@ -9,3 +9,9 @@ test_file.*
 # editor/OS noise
 *.swp
 .DS_Store
+
+# SECRETS — never sync VM credentials to any remote
+*.returned.md
+
+# lecture PDFs: local-only, VM doesn't need them, keeps the sync repo light
+*.pdf

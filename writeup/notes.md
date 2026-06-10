@@ -40,15 +40,27 @@ be probed indirectly from inside the guest. Revised discriminators:
 | # | Hypothesis | Prediction (counter/behavior) | In-guest discriminating measurement | Result: ruled in / out | Evidence file |
 |---|-----------|-------------------------------|----------------------------|------------------------|---------------|
 | F | Host DVFS: physical core runs slow when guest is idle-ish; bg load makes host raise freq | `cycles`(GHz) lower unloaded; **instructions/transaction equal**; unhalted-cycles/txn equal | `perf stat cycles,ref-cycles,instructions,task-clock` no-load vs load | **RULED OUT** — cycles/ref-cycles = 1.347 in BOTH conditions ⇒ when-running frequency identical (~2.7 GHz). Frequency does not change. | p2_perfstat_{noload,load}.txt |
-| I | HLT→VMEXIT: idle reader HLTs → VMEXIT; wakeup pays VMENTER (+ host reschedule). Load = vCPUs never HLT | keeping the pipe core busy (no bg hogs) reproduces the speedup | **pin both ends to one core** `taskset -c 0` (core never idles) | **RULED IN (pending /usr/src)** — pin-to-one-core, NO load = 5.42 µs ≈ loaded 5.26 µs (vs unpinned no-load 11.1 µs). Idle removal alone reproduces the effect. | p2_pin1core_noload.txt |
-| P | Scheduler placement: unloaded pair bounces across idle vCPUs (cold, cross-vCPU IPI); load co-locates | more cpu-migrations unloaded; pinning both ends reproduces low latency | `perf stat cpu-migrations`; `sched:*` trace | **NOT YET RULED OUT** — pin-to-one-core changed TWO variables (idle AND placement); and the "loaded case is cross-core" rescue was an UNMEASURED assumption. Need a placement-controlled experiment (Phase 2B). | (pending) |
+| I | HLT→VMEXIT: idle reader HLTs → VMEXIT; wakeup pays VMENTER. Load = vCPUs never HLT | keeping the pipe core busy (no bg hogs), placement held constant, reproduces the speedup | **Phase 2B**: cross-core IDLE vs cross-core BUSY | **RULED OUT** — cross-core BUSY (Probe 5) = 10.9 µs ≈ cross-core IDLE (Probe 4) = 11.2 µs. Removing idle with placement fixed did NOT help. Idle/HLT is not the cause. | p2b_pin2core_{idle,busy}.txt |
+| P | Scheduler placement: with idle CPUs the scheduler SPREADS the pair cross-core (each round-trip = IPI + cross-core cache bounce); load removes idle CPUs ⇒ pair co-located same-core | same-core fast, cross-core slow, independent of idle/busy; load ⇒ pair concentrated on one CPU | Phase 2B matrix + `perf sched timehist` placement | **RULED IN** — same-core (pin-1) 5.4 µs vs cross-core (pin-2, idle OR busy) ~11 µs. timehist: loaded run concentrates lat_pipe on one CPU; unloaded spreads it. | p2_pin1core_noload.txt, p2b_*, p2b_sched_timehist_*.txt |
 
-**Verdict (PROVISIONAL — P still open):** F is ruled out by the constant cycles/ref-cycles
-ratio (1.347 both conditions ⇒ when-running frequency identical). I is strongly indicated (pin
-reproduces the speedup) but is **entangled with P** until we isolate idle from placement.
-Phase 2B isolates them by holding placement = cross-core and flipping only idle. Caveat:
-perf-stat latency (~69 µs) and totals are perf-overhead/calibration artifacts, NOT compared
-across runs — only the frequency RATIO and the pin result are used.
+**VERDICT (revised — earlier "I" verdict was WRONG; the placement-controlled Phase 2B overturned it):**
+The mechanism is **scheduler wake-placement (P)**. When idle CPUs exist, `select_idle_sibling`
+places the woken pipe partner on a *different* (idle) core → every hot-potato round-trip is a
+cross-core wakeup (reschedule IPI + pipe-buffer/task-struct cache-line bounce between cores),
+~11 µs. Background CPU load removes the idle CPUs, so the scheduler co-locates the pair on one
+core → cheap same-core context switch, ~5 µs. Background load "helps" by accidentally forcing
+co-location.
+- F ruled out: cycles/ref-cycles = 1.347 both conditions ⇒ when-running frequency identical.
+- I ruled out: cross-core BUSY ≈ cross-core IDLE (~11 µs) ⇒ idle/HLT is not the cause.
+- Confound handled: Probe 4 (cross-core, no contention) ≈ Probe 5 (cross-core, spinner
+  contention) ⇒ slowness is the cross-core placement, not CPU contention.
+- Method note: the original pin-to-one-core probe changed idle AND placement together; the
+  student flagged this; Phase 2B held placement fixed and flipped only idle, which is what
+  reversed the verdict. (Don't kill a hypothesis on an uncontrolled experiment.)
+
+### Kernel-source confirmation (TODO — Phase 4)
+- `kernel/sched/fair.c`: `select_task_rq_fair` → `select_idle_sibling` / `wake_affine` —
+  the idle-CPU-seeking placement that spreads the pair when idle CPUs are available.
 
 ### Kernel-source confirmation
 - File / function (path under /usr/src):

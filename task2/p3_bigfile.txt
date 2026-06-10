@@ -1,0 +1,10 @@
+=== 1G v1 ===
+    reads/s:                      1433224.31
+    read, MiB/s:                  5598.53
+             17173      page-faults                                                           
+           7408592      dTLB-load-misses                                                      
+=== 1G v2 ===
+    reads/s:                      1455012.84
+    read, MiB/s:                  5683.64
+              1301      page-faults                                                           
+           7413252      dTLB-load-misses                                                      

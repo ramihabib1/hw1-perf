@@ -58,9 +58,30 @@ co-location.
   student flagged this; Phase 2B held placement fixed and flipped only idle, which is what
   reversed the verdict. (Don't kill a hypothesis on an uncontrolled experiment.)
 
-### Kernel-source confirmation (TODO — Phase 4)
-- `kernel/sched/fair.c`: `select_task_rq_fair` → `select_idle_sibling` / `wake_affine` —
-  the idle-CPU-seeking placement that spreads the pair when idle CPUs are available.
+### Phase 4 evidence (deck-sanctioned: histogram + sampled callgraph + source)
+- **Off-CPU latency histogram** (bpftrace, sched_switch): no-load mode **[8,16) µs** (139k);
+  with-load mode **[2,4) µs** (312k). Whole distribution shifts down ~4×, matching 11→5 µs.
+  [p4_offcpu_hist_{noload,load}.txt]
+- **Sampled callgraph** (perf record -e sched:sched_switch -g): no-load shows the two pipe
+  ends on SEPARATE cores blocking to the idle task —
+  `lat_pipe ... S ==> swapper/0` and `... ==> swapper/3`, via
+  `anon_pipe_read → schedule → __schedule`. Direct picture of cross-core spread + idle.
+  [p4_callgraph_noload.txt]
+- Per-CPU switch distribution [p2b_latpipe_cpudist_*]: AGGREGATE over many iterations, muddy —
+  treated as weak/supporting only, not headline evidence.
+
+### Kernel-source confirmation — kernel/sched/fair.c (KVM guest kernel 7.0.0-15)
+- Wakeup placement path: `try_to_wake_up → select_task_rq → select_task_rq_fair (fair.c:8579)
+  → select_idle_sibling (fair.c:7836)`.
+- In `select_idle_sibling` [p4_select_idle_sibling.txt], the early outs take `target`/`prev`
+  only if they are already idle (lines 24–26, 31–37). The decisive step is **line 110**
+  `i = select_idle_cpu(p, sd, has_idle_core, target)` — it scans the LLC sched-domain for ANY
+  idle CPU and returns it. With idle CPUs available (no bg load) it finds one and places the
+  woken pipe partner there → the two ends land on different cores → every hot-potato round-trip
+  is a cross-core wakeup (reschedule IPI + pipe-buffer/task-struct cache-line bounce) ≈ 11 µs.
+  Under bg load, `select_idle_cpu` finds no idle CPU (returns past line 111) → falls through to
+  `prev`/`target` → the partner is co-located with the waker → same-core context switch ≈ 5 µs.
+- (Student to confirm/own the line identification.)
 
 ### Kernel-source confirmation
 - File / function (path under /usr/src):

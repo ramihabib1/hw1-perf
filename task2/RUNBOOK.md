@@ -112,6 +112,55 @@ sudo bpftrace -e 'kprobe:__filemap_add_folio { @order = hist(arg3); }'        # 
 # (run a v1 prepare vs a v2 prepare under this; compare the order histograms)
 ```
 
+## Phase 3 — Confirm folio order, find the code, try to reproduce the gap
+Phase 2 showed: v2 builds larger folios (2× fewer faults) but both stay sub-PMD ⇒ no huge
+mapping ⇒ no dTLB win ⇒ no throughput gap. Now: prove the folio sizes, locate the kernel
+logic, and try to push folios to PMD so the gap appears (toggle-the-effect, like MALLOC_TOP_PAD).
+
+### 3a — Confirm folio order built during prepare (bpftrace)
+```
+BT='tracepoint:filemap:mm_filemap_add_to_page_cache { @folios = count(); }'
+COMMON="--file-num=1 --file-total-size=64M"
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+sudo bpftrace -e "$BT" -c "bash -lc 'cd ~/v1 && sysbench fileio $COMMON prepare'" 2>&1 | tee task2/p3_folios_v1.txt
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+sudo bpftrace -e "$BT" -c "bash -lc 'cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare'" 2>&1 | tee task2/p3_folios_v2.txt
+```
+16384 pages / @folios = avg pages per folio. Expect v2 ≫ v1, both < 512 (PMD).
+
+### 3b — Reproduction attempts (make v2 reach PMD ⇒ make the gap appear)
+```
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+# (i) THP sweep — does any mode change FilePmdMapped / the gap? (the deferred sweep)
+for thp in always madvise never; do
+  echo $thp | sudo tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+  sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+  rm -rf ~/v1 ~/v2; mkdir -p ~/v1 ~/v2
+  ( cd ~/v1 && sysbench fileio $COMMON prepare ) >/dev/null 2>&1
+  ( cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare ) >/dev/null 2>&1
+  echo "=== THP=$thp ==="; for i in 1 2 3; do
+    printf 'v1 '; ( cd ~/v1 && $RUN ) | grep -oP 'reads/s:\s*\K[0-9.]+';
+    printf 'v2 '; ( cd ~/v2 && $RUN ) | grep -oP 'reads/s:\s*\K[0-9.]+'; done
+done 2>&1 | tee task2/p3_thp_sweep.txt
+echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+# (ii) bigger working set — larger files may reach higher-order/PMD folios
+BIG="--file-num=1 --file-total-size=1G"
+BRUN="sysbench fileio $BIG --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+rm -rf ~/b1 ~/b2; mkdir -p ~/b1 ~/b2
+( cd ~/b1 && sysbench fileio $BIG prepare ) >/dev/null 2>&1
+( cd ~/b2 && sysbench fileio $BIG --file-block-size=4M prepare ) >/dev/null 2>&1
+{ echo "=== 1G v1 ==="; ( cd ~/b1 && $BRUN ) | grep -E 'reads/s|read, MiB';
+  ( cd ~/b1 && perf stat -e page-faults,dTLB-load-misses $BRUN ) 2>&1 | grep -E 'page-faults|dTLB';
+  echo "=== 1G v2 ==="; ( cd ~/b2 && $BRUN ) | grep -E 'reads/s|read, MiB';
+  ( cd ~/b2 && perf stat -e page-faults,dTLB-load-misses $BRUN ) 2>&1 | grep -E 'page-faults|dTLB';
+} 2>&1 | tee task2/p3_bigfile.txt
+( cd ~/b1 && sysbench fileio $BIG cleanup ); ( cd ~/b2 && sysbench fileio $BIG cleanup )
+```
+Read: does a v2>v1 reads/s gap appear under any THP mode or at 1 GiB, with FilePmdMapped>0 /
+fewer dTLB-misses? If yes → gap reproduced and tied to huge mapping. If never → gap is genuinely
+dormant in this kernel; we explain it via the sub-PMD folio cap + source.
+
 ## Phase 4 — Kernel-source confirmation (/usr/src)
 - Readahead/folio order: `mm/readahead.c` (`page_cache_ra_order`), `mm/filemap.c` (`filemap_fault`, `filemap_map_pages`)
 - Large folios in the page cache + how mmap maps them (TLB consequence)

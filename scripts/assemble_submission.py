@@ -22,6 +22,8 @@ TASK1_LOGS = [
     ("task1/p4_offcpu_hist_noload.txt", "off-CPU latency histogram, no load"),
     ("task1/p4_offcpu_hist_load.txt",   "off-CPU latency histogram, with load"),
     ("task1/p4_callgraph_noload.txt",   "perf sched callgraph, no load"),
+    ("task1/p4_select_task_rq_fair.txt", "kernel source: select_task_rq_fair (mm/.../sched/fair.c)"),
+    ("task1/p4_select_idle_sibling.txt", "kernel source: select_idle_sibling (the placement decision)"),
 ]
 TASK2_LOGS = [
     ("task2/p10_reboot_confirmed.txt", "the gap, with perf stat (dTLB collapse) and smaps (FilePmdMapped=64MiB for v2)"),
@@ -30,6 +32,8 @@ TASK2_LOGS = [
     ("task2/p1b_filefrag.txt",     "filefrag (fragmentation is trivial)"),
     ("task2/p2_perfstat_v1.txt",   "perf stat v1 (page-faults are all minor -> fully cached)"),
     ("task2/p5c_force_thp.txt",    "independent check: 2 MiB (MAP_HUGETLB) vs 4 KiB pages, same read pattern"),
+    ("task2/p4_page_cache_ra_order.txt", "kernel source: page_cache_ra_order (folio order capped by I/O size)"),
+    ("task2/p4_do_set_pmd.txt",    "kernel source: do_set_pmd (installs the 2 MiB huge-page mapping)"),
 ]
 
 def appendix(title, items):

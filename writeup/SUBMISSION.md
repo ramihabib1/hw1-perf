@@ -459,6 +459,213 @@ Pipe latency: 6.4716 microseconds
                           vfs_read
 ~~~~
 
+### task1/p4_select_task_rq_fair.txt
+*kernel source: select_task_rq_fair (mm/.../sched/fair.c)*
+
+~~~~text
+static int
+select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+{
+	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+	struct sched_domain *tmp, *sd = NULL;
+	int cpu = smp_processor_id();
+	int new_cpu = prev_cpu;
+	int want_affine = 0;
+	/* SD_flags and WF_flags share the first nibble */
+	int sd_flag = wake_flags & 0xF;
+
+	/*
+	 * required for stable ->cpus_allowed
+	 */
+	lockdep_assert_held(&p->pi_lock);
+	if (wake_flags & WF_TTWU) {
+		record_wakee(p);
+
+		if ((wake_flags & WF_CURRENT_CPU) &&
+		    cpumask_test_cpu(cpu, p->cpus_ptr))
+			return cpu;
+
+		if (!is_rd_overutilized(this_rq()->rd)) {
+			new_cpu = find_energy_efficient_cpu(p, prev_cpu);
+			if (new_cpu >= 0)
+				return new_cpu;
+			new_cpu = prev_cpu;
+		}
+
+		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
+	}
+
+	rcu_read_lock();
+	for_each_domain(cpu, tmp) {
+		/*
+		 * If both 'cpu' and 'prev_cpu' are part of this domain,
+		 * cpu is a valid SD_WAKE_AFFINE target.
+		 */
+		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
+		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
+			if (cpu != prev_cpu)
+				new_cpu = wake_affine(tmp, p, cpu, prev_cpu, sync);
+
+			sd = NULL; /* Prefer wake_affine over balance flags */
+			break;
+		}
+
+		/*
+		 * Usually only true for WF_EXEC and WF_FORK, as sched_domains
+		 * usually do not have SD_BALANCE_WAKE set. That means wakeup
+		 * will usually go to the fast path.
+		 */
+		if (tmp->flags & sd_flag)
+			sd = tmp;
+		else if (!want_affine)
+			break;
+	}
+
+	if (unlikely(sd)) {
+		/* Slow path */
+		new_cpu = sched_balance_find_dst_cpu(sd, p, cpu, prev_cpu, sd_flag);
+	} else if (wake_flags & WF_TTWU) { /* XXX always ? */
+		/* Fast path */
+		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
+	}
+	rcu_read_unlock();
+
+	return new_cpu;
+}
+~~~~
+
+### task1/p4_select_idle_sibling.txt
+*kernel source: select_idle_sibling (the placement decision)*
+
+~~~~text
+static int select_idle_sibling(struct task_struct *p, int prev, int target)
+{
+	bool has_idle_core = false;
+	struct sched_domain *sd;
+	unsigned long task_util, util_min, util_max;
+	int i, recent_used_cpu, prev_aff = -1;
+
+	/*
+	 * On asymmetric system, update task utilization because we will check
+	 * that the task fits with CPU's capacity.
+	 */
+	if (sched_asym_cpucap_active()) {
+		sync_entity_load_avg(&p->se);
+		task_util = task_util_est(p);
+		util_min = uclamp_eff_value(p, UCLAMP_MIN);
+		util_max = uclamp_eff_value(p, UCLAMP_MAX);
+	}
+
+	/*
+	 * per-cpu select_rq_mask usage
+	 */
+	lockdep_assert_irqs_disabled();
+
+	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
+	    asym_fits_cpu(task_util, util_min, util_max, target))
+		return target;
+
+	/*
+	 * If the previous CPU is cache affine and idle, don't be stupid:
+	 */
+	if (prev != target && cpus_share_cache(prev, target) &&
+	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(prev, target))
+			return prev;
+
+		prev_aff = prev;
+	}
+
+	/*
+	 * Allow a per-cpu kthread to stack with the wakee if the
+	 * kworker thread and the tasks previous CPUs are the same.
+	 * The assumption is that the wakee queued work for the
+	 * per-cpu kthread that is now complete and the wakeup is
+	 * essentially a sync wakeup. An obvious example of this
+	 * pattern is IO completions.
+	 */
+	if (is_per_cpu_kthread(current) &&
+	    in_task() &&
+	    prev == smp_processor_id() &&
+	    this_rq()->nr_running <= 1 &&
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		return prev;
+	}
+
+	/* Check a recently used CPU as a potential idle candidate: */
+	recent_used_cpu = p->recent_used_cpu;
+	p->recent_used_cpu = prev;
+	if (recent_used_cpu != prev &&
+	    recent_used_cpu != target &&
+	    cpus_share_cache(recent_used_cpu, target) &&
+	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
+	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(recent_used_cpu, target))
+			return recent_used_cpu;
+
+	} else {
+		recent_used_cpu = -1;
+	}
+
+	/*
+	 * For asymmetric CPU capacity systems, our domain of interest is
+	 * sd_asym_cpucapacity rather than sd_llc.
+	 */
+	if (sched_asym_cpucap_active()) {
+		sd = rcu_dereference_all(per_cpu(sd_asym_cpucapacity, target));
+		/*
+		 * On an asymmetric CPU capacity system where an exclusive
+		 * cpuset defines a symmetric island (i.e. one unique
+		 * capacity_orig value through the cpuset), the key will be set
+		 * but the CPUs within that cpuset will not have a domain with
+		 * SD_ASYM_CPUCAPACITY. These should follow the usual symmetric
+		 * capacity path.
+		 */
+		if (sd) {
+			i = select_idle_capacity(p, sd, target);
+			return ((unsigned)i < nr_cpumask_bits) ? i : target;
+		}
+	}
+
+	sd = rcu_dereference_all(per_cpu(sd_llc, target));
+	if (!sd)
+		return target;
+
+	if (sched_smt_active()) {
+		has_idle_core = test_idle_cores(target);
+
+		if (!has_idle_core && cpus_share_cache(prev, target)) {
+			i = select_idle_smt(p, sd, prev);
+			if ((unsigned int)i < nr_cpumask_bits)
+				return i;
+		}
+	}
+
+	i = select_idle_cpu(p, sd, has_idle_core, target);
+	if ((unsigned)i < nr_cpumask_bits)
+		return i;
+
+	/*
+	 * For cluster machines which have lower sharing cache like L2 or
+	 * LLC Tag, we tend to find an idle CPU in the target's cluster
+	 * first. But prev_cpu or recent_used_cpu may also be a good candidate,
+	 * use them if possible when no idle CPU found in select_idle_cpu().
+	 */
+	if ((unsigned int)prev_aff < nr_cpumask_bits)
+		return prev_aff;
+	if ((unsigned int)recent_used_cpu < nr_cpumask_bits)
+		return recent_used_cpu;
+
+	return target;
+}
+~~~~
+
 ## Task 2
 
 ### task2/p10_reboot_confirmed.txt
@@ -735,4 +942,165 @@ mode=2 MB=1024 reads/s=67850882 sum=200000000
 
        3.075510000 seconds user
        0.081935000 seconds sys
+~~~~
+
+### task2/p4_page_cache_ra_order.txt
+*kernel source: page_cache_ra_order (folio order capped by I/O size)*
+
+~~~~text
+void page_cache_ra_order(struct readahead_control *ractl,
+		struct file_ra_state *ra)
+{
+	struct address_space *mapping = ractl->mapping;
+	pgoff_t start = readahead_index(ractl);
+	pgoff_t index = start;
+	unsigned int min_order = mapping_min_folio_order(mapping);
+	pgoff_t limit = (i_size_read(mapping->host) - 1) >> PAGE_SHIFT;
+	pgoff_t mark = index + ra->size - ra->async_size;
+	unsigned int nofs;
+	int err = 0;
+	gfp_t gfp = readahead_gfp_mask(mapping);
+	unsigned int new_order = ra->order;
+
+	trace_page_cache_ra_order(mapping->host, start, ra);
+	if (!mapping_large_folio_support(mapping)) {
+		ra->order = 0;
+		goto fallback;
+	}
+
+	limit = min(limit, index + ra->size - 1);
+
+	new_order = min(mapping_max_folio_order(mapping), new_order);
+	new_order = min_t(unsigned int, new_order, ilog2(ra->size));
+	new_order = max(new_order, min_order);
+
+	ra->order = new_order;
+
+	/* See comment in page_cache_ra_unbounded() */
+	nofs = memalloc_nofs_save();
+	filemap_invalidate_lock_shared(mapping);
+	/*
+	 * If the new_order is greater than min_order and index is
+	 * already aligned to new_order, then this will be noop as index
+	 * aligned to new_order should also be aligned to min_order.
+	 */
+	ractl->_index = mapping_align_index(mapping, index);
+	index = readahead_index(ractl);
+
+	while (index <= limit) {
+		unsigned int order = new_order;
+
+		/* Align with smaller pages if needed */
+		if (index & ((1UL << order) - 1))
+			order = __ffs(index);
+		/* Don't allocate pages past EOF */
+		while (order > min_order && index + (1UL << order) - 1 > limit)
+			order--;
+		err = ra_alloc_folio(ractl, index, mark, order, gfp);
+		if (err)
+			break;
+		index += 1UL << order;
+	}
+
+	read_pages(ractl);
+	filemap_invalidate_unlock_shared(mapping);
+	memalloc_nofs_restore(nofs);
+
+	/*
+	 * If there were already pages in the page cache, then we may have
+	 * left some gaps.  Let the regular readahead code take care of this
+	 * situation below.
+	 */
+	if (!err)
+		return;
+fallback:
+	/*
+	 * ->readahead() may have updated readahead window size so we have to
+	 * check there's still something to read.
+	 */
+	if (ra->size > index - start)
+		do_page_cache_ra(ractl, ra->size - (index - start),
+				 ra->async_size);
+}
+~~~~
+
+### task2/p4_do_set_pmd.txt
+*kernel source: do_set_pmd (installs the 2 MiB huge-page mapping)*
+
+~~~~text
+vm_fault_t do_set_pmd(struct vm_fault *vmf, struct folio *folio, struct page *page)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	bool write = vmf->flags & FAULT_FLAG_WRITE;
+	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
+	pmd_t entry;
+	vm_fault_t ret = VM_FAULT_FALLBACK;
+
+	/*
+	 * It is too late to allocate a small folio, we already have a large
+	 * folio in the pagecache: especially s390 KVM cannot tolerate any
+	 * PMD mappings, but PTE-mapped THP are fine. So let's simply refuse any
+	 * PMD mappings if THPs are disabled. As we already have a THP,
+	 * behave as if we are forcing a collapse.
+	 */
+	if (thp_disabled_by_hw() || vma_thp_disabled(vma, vma->vm_flags,
+						     /* forced_collapse=*/ true))
+		return ret;
+
+	if (!thp_vma_suitable_order(vma, haddr, PMD_ORDER))
+		return ret;
+
+	if (folio_order(folio) != HPAGE_PMD_ORDER)
+		return ret;
+	page = &folio->page;
+
+	/*
+	 * Just backoff if any subpage of a THP is corrupted otherwise
+	 * the corrupted page may mapped by PMD silently to escape the
+	 * check.  This kind of THP just can be PTE mapped.  Access to
+	 * the corrupted subpage should trigger SIGBUS as expected.
+	 */
+	if (unlikely(folio_test_has_hwpoisoned(folio)))
+		return ret;
+
+	/*
+	 * Archs like ppc64 need additional space to store information
+	 * related to pte entry. Use the preallocated table for that.
+	 */
+	if (arch_needs_pgtable_deposit() && !vmf->prealloc_pte) {
+		vmf->prealloc_pte = pte_alloc_one(vma->vm_mm);
+		if (!vmf->prealloc_pte)
+			return VM_FAULT_OOM;
+	}
+
+	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+	if (unlikely(!pmd_none(*vmf->pmd)))
+		goto out;
+
+	flush_icache_pages(vma, page, HPAGE_PMD_NR);
+
+	entry = folio_mk_pmd(folio, vma->vm_page_prot);
+	if (write)
+		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
+
+	add_mm_counter(vma->vm_mm, mm_counter_file(folio), HPAGE_PMD_NR);
+	folio_add_file_rmap_pmd(folio, page, vma);
+
+	/*
+	 * deposit and withdraw with pmd lock held
+	 */
+	if (arch_needs_pgtable_deposit())
+		deposit_prealloc_pte(vmf);
+
+	set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
+
+	update_mmu_cache_pmd(vma, haddr, vmf->pmd);
+
+	/* fault is handled */
+	ret = 0;
+	count_vm_event(THP_FILE_MAPPED);
+out:
+	spin_unlock(vmf->ptl);
+	return ret;
+}
 ~~~~

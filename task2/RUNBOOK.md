@@ -244,6 +244,65 @@ file-THP would deliver but `CONFIG_READ_ONLY_THP_FOR_FS=off` blocks. If no benef
 story is WRONG — report it, we rethink (maybe LLC/contiguity; also capture LLC-load-misses then).
 Then `./scripts/vmsync "task2 p5 folio hist + THP dTLB proof"`, report files, STOP.
 
+## Phase 5c — FORCE huge mapping and measure the dTLB win (fixes 5b)
+5b's MADV_HUGEPAGE never engaged THP. This version FORCES it three ways and self-reports whether
+it worked, so the dTLB contrast is real. Working set > LLC (256M/1G) to isolate TLB from cache.
+```
+cat > /tmp/thp_rndrd2.c <<'EOF'
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+#include <errno.h>
+#include <sys/mman.h>
+#ifndef MADV_COLLAPSE
+#define MADV_COLLAPSE 25
+#endif
+static long anonhuge_kb(void){
+  FILE*f=fopen("/proc/self/smaps_rollup","r"); if(!f) return -1;
+  char l[256]; long kb=-1;
+  while(fgets(l,sizeof l,f)) if(sscanf(l,"AnonHugePages: %ld kB",&kb)==1) break;
+  fclose(f); return kb;
+}
+int main(int argc,char**argv){
+  size_t MB=argc>1?atol(argv[1]):256; int mode=argc>2?atoi(argv[2]):0; /* 0=4K 1=COLLAPSE 2=HUGETLB */
+  size_t sz=MB<<20; int flags=MAP_PRIVATE|MAP_ANONYMOUS; if(mode==2) flags|=MAP_HUGETLB;
+  char*p=mmap(NULL,sz,PROT_READ|PROT_WRITE,flags,-1,0);
+  if(p==MAP_FAILED){ fprintf(stderr,"mmap(mode=%d) failed: %s\n",mode,strerror(errno)); return 1; }
+  memset(p,1,sz);
+  if(mode==1 && madvise(p,sz,MADV_COLLAPSE)!=0) fprintf(stderr,"MADV_COLLAPSE failed: %s\n",strerror(errno));
+  fprintf(stderr,"mode=%d MB=%zu AnonHugePages_kB=%ld%s\n",mode,MB,anonhuge_kb(),mode==2?" (hugetlb: see HugePages_Free)":"");
+  size_t pages=sz/4096; uint64_t s=0,r=0x9e3779b97f4a7c15ULL; size_t iters=200000000;
+  struct timespec a,b; clock_gettime(CLOCK_MONOTONIC,&a);
+  for(size_t i=0;i<iters;i++){ r^=r<<13; r^=r>>7; r^=r<<17; s+=p[(r%pages)*4096]; }
+  clock_gettime(CLOCK_MONOTONIC,&b);
+  double t=(b.tv_sec-a.tv_sec)+(b.tv_nsec-a.tv_nsec)/1e9;
+  fprintf(stderr,"mode=%d MB=%zu reads/s=%.0f sum=%lu\n",mode,MB,iters/t,(unsigned long)s);
+  return 0;
+}
+EOF
+gcc -O2 -o /tmp/thp_rndrd2 /tmp/thp_rndrd2.c
+# base (4K) vs MADV_COLLAPSE (2M THP) — watch AnonHugePages_kB in the output (must be >0 for mode 1):
+{ for MB in 256 1024; do for m in 0 1; do
+    echo "=== ${MB}MB mode=$m ==="
+    sudo perf stat -e dTLB-load-misses,cycles,instructions /tmp/thp_rndrd2 $MB $m
+  done; done; } 2>&1 | tee task2/p5c_force_thp.txt
+# guaranteed huge via hugetlb — reserve, run, release:
+echo 600 | sudo tee /proc/sys/vm/nr_hugepages >/dev/null
+grep -E 'HugePages_(Total|Free)' /proc/meminfo | tee -a task2/p5c_force_thp.txt
+{ for MB in 256 1024; do
+    echo "=== ${MB}MB mode=2 (MAP_HUGETLB) ==="
+    sudo perf stat -e dTLB-load-misses,cycles,instructions /tmp/thp_rndrd2 $MB 2
+  done; } 2>&1 | tee -a task2/p5c_force_thp.txt
+echo 0 | sudo tee /proc/sys/vm/nr_hugepages >/dev/null   # release as-shipped
+```
+Read: for the runs where huge mapping ENGAGED (AnonHugePages_kB>0 for mode 1, or HugePages used for
+mode 2), do dTLB-load-misses drop sharply vs mode 0, and reads/s rise? The size of that rise is the
+dTLB-win magnitude on this CPU — the number proving the Phase-4/5 claim. Report AnonHugePages_kB and
+HugePages_Free so we KNOW which runs actually got huge pages. Then vmsync "task2 p5c", report, STOP.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

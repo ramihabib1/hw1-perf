@@ -1,0 +1,18 @@
+ 13:08:37 up 22 days, 21:51,  2 users,  load average: 0.00, 0.00, 0.00
+
+    PID COMMAND         %CPU %MEM
+  96760 claude           0.8  4.3
+  95134 claude           0.8  4.5
+  96737 sshd-session     0.0  0.0
+  95108 sshd-session     0.0  0.0
+   9319 chronyd          0.0  0.1
+    812 multipathd       0.0  0.1
+      1 systemd          0.0  0.2
+  94990 systemd          0.0  0.1
+  97587 kworker/0:2-cgr  0.0  0.0
+   1258 dbus-daemon      0.0  0.0
+     54 kcompactd0       0.0  0.0
+
+MemFree:         6352420 kB
+MemAvailable:    7093804 kB
+AnonHugePages:     20480 kB

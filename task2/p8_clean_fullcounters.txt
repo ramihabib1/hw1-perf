@@ -1,0 +1,62 @@
+=== rep 1 v1 ===
+    reads/s:                      1874293.65
+       13242662633      cycles                                                                
+        7492847052      instructions                                                          
+           8633794      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349782120      L1-dcache-load-misses                                                 
+       5.009091332 seconds time elapsed
+=== rep 1 v2 ===
+    reads/s:                      1893155.68
+       13250457666      cycles                                                                
+        7558088218      instructions                                                          
+           8753237      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351463001      L1-dcache-load-misses                                                 
+       5.007510366 seconds time elapsed
+=== rep 2 v1 ===
+    reads/s:                      1890857.03
+       13237916689      cycles                                                                
+        7558999952      instructions                                                          
+           8754541      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349527788      L1-dcache-load-misses                                                 
+       5.008712152 seconds time elapsed
+=== rep 2 v2 ===
+    reads/s:                      1891963.36
+       13247927986      cycles                                                                
+        7553324385      instructions                                                          
+           8734566      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351002213      L1-dcache-load-misses                                                 
+       5.007475160 seconds time elapsed
+=== rep 3 v1 ===
+    reads/s:                      1871424.83
+       13258425588      cycles                                                                
+        7480843797      instructions                                                          
+           8652185      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349515698      L1-dcache-load-misses                                                 
+       5.008804272 seconds time elapsed
+=== rep 3 v2 ===
+    reads/s:                      1892519.41
+       13251841827      cycles                                                                
+        7555693849      instructions                                                          
+           8752152      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351761434      L1-dcache-load-misses                                                 
+       5.007417543 seconds time elapsed
+Rss:               74908 kB
+Pss_Anon:           1804 kB
+Anonymous:          1804 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB

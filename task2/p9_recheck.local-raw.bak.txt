@@ -1,0 +1,36 @@
+=== rep 1 v1 ===
+    reads/s:                      1852248.45
+       13217601316      cycles                                                                
+        7482846359      instructions                                                          
+           8611361      dTLB-load-misses                                                      
+         140288334      cache-misses                                                          
+         624820316      cache-references                                                      
+         350934158      L1-dcache-load-misses                                                 
+       5.014906364 seconds time elapsed
+=== rep 1 v2 ===
+    reads/s:                      1869100.01
+       13197034526      cycles                                                                
+        7541502583      instructions                                                          
+           8697838      dTLB-load-misses                                                      
+         144367232      cache-misses                                                          
+         629155874      cache-references                                                      
+         339484767      L1-dcache-load-misses                                                 
+       5.009338993 seconds time elapsed
+=== rep 2 v1 ===
+    reads/s:                      1861242.93
+       13216160895      cycles                                                                
+        7452437652      instructions                                                          
+           8649865      dTLB-load-misses                                                      
+         140881062      cache-misses                                                          
+         627865800      cache-references                                                      
+         353046624      L1-dcache-load-misses                                                 
+       5.009171722 seconds time elapsed
+=== rep 2 v2 ===
+    reads/s:                      1856784.42
+       13226939419      cycles                                                                
+        7433845682      instructions                                                          
+           8642273      dTLB-load-misses                                                      
+         142926173      cache-misses                                                          
+         625907166      cache-references                                                      
+         351773884      L1-dcache-load-misses                                                 
+       5.009027997 seconds time elapsed

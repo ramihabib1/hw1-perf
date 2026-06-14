@@ -71,9 +71,9 @@ is same-core versus cross-core.
 ## The cause: scheduler placement
 
 When there are idle CPUs, the scheduler spreads the two pipe processes onto different cores, so
-every round-trip is a cross-core wakeup (an inter-processor interrupt, plus the pipe buffer and
-task data bouncing between the two cores' caches). Background load keeps all the CPUs busy, so the
-scheduler puts both processes on the same core, where a context switch is about twice as cheap.
+every round-trip is a cross-core wakeup: the kernel has to wake the other core and the pipe data
+has to move between the two cores' caches. Background load keeps all the CPUs busy, so the scheduler
+puts both processes on the same core, where a context switch is about twice as cheap.
 
 Two pieces of evidence back this up. A perf sched callgraph of the no-load run shows the two pipe
 processes on different cores (cpu0 and cpu3), each handing the CPU to the idle task when it blocks.

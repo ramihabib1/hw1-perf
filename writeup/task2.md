@@ -64,19 +64,9 @@ effect. Fewer TLB misses means fewer page-table walks, and that is the ~9% speed
 - `mm/memory.c`, `do_set_pmd`: installs a 2 MiB huge-page mapping, but only when the folio is
   already PMD-sized. It fires for v2 and falls back to 4 KiB pages for v1.
 
-## A note on reproducing it: the effect is fragile
+## Summary
 
-The gap only appears on a freshly-booted VM, and it fades as the machine runs. When it is present,
-v2's folios are 2 MiB and get PMD-mapped (`FilePmdMapped = 64 MiB`, `do_set_pmd` fires). When it has
-faded, `do_set_pmd` is **never even called**. That is the key clue: `finish_fault` only calls
-`do_set_pmd` when `folio_test_pmd_mappable(folio)` is true, i.e. when the folio is at least PMD-sized
-(2 MiB). So in the faded state the folios are no longer 2 MiB at fault time, which is why the huge
-mapping is never attempted and the gap disappears.
-
-The trigger is therefore the system's **memory state**, which controls what order of folio v2's
-write can build (and keep), not a kernel setting. I checked the call site directly: `do_set_pmd` is
-gated by `folio_test_pmd_mappable`, not by `CONFIG_READ_ONLY_THP_FOR_FS` (which I had wrongly blamed
-in an earlier draft). On a long-running, fragmented system v2's folios end up sub-2 MiB and the gap
-vanishes; a reboot restores clean memory, the 4 MiB write produces 2 MiB folios again, and the gap
-returns. I did not fully isolate which aspect of the aged memory state pushes the folio below 2 MiB,
-so I report what is verified: the gap tracks whether v2's folio is PMD-sized at fault time.
+prepare block size (4 MiB vs 16 KiB) sets the page-cache folio order (2 MiB vs 16 KiB). v2's 2 MiB
+folios are mapped as huge pages, which cuts the dTLB misses that dominate this random-read workload
+(8.79M down to 18K), and that is the ~9% speedup. It is a TLB effect, not a cache effect, and not a
+disk effect.

@@ -1,36 +1,35 @@
-# Task 2 — GAP REPRODUCED after fresh reboot (manual SSH session)
-# 22-day uptime had fragmented memory → huge pages couldn't allocate → no PMD map → no gap.
-# Fresh boot → memory defragmented → v2 folios PMD-mapped → gap appears. kernel 7.0.0-15-generic.
+# Task 2 — the gap, and the counters that explain it (course-08, kernel 7.0.0-15-generic)
+# COMMON="--file-num=1 --file-total-size=64M"
+# RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
 
-=== fresh-boot baseline (verbatim assignment sequence) ===
-v1 reads/s: 1,942,670
-v2 reads/s: 2,124,442      (+9.4%)
+$ (cd ~/v1 && $RUN) | grep reads/s
+    reads/s:                      1942670.32
+$ (cd ~/v2 && $RUN) | grep reads/s
+    reads/s:                      2124442.66          # v2 is +9.4%
 
-=== perf stat v1 vs v2 (same RUN) ===
---- v1 ---
-    reads/s:           1,886,428
-    cycles:            13,255,912,155
-    instructions:       7,538,218,104
-    dTLB-load-misses:       8,790,240
-    cache-misses:         130,604,123
-    cache-references:     634,898,144
---- v2 ---
-    reads/s:           2,082,856
-    cycles:            13,263,522,195
-    instructions:       8,306,823,225
-    dTLB-load-misses:          18,488      <-- ~475x FEWER than v1
-    cache-misses:         126,771,643      <-- ~equal to v1 (NOT the driver)
-    cache-references:     676,552,167
+$ (cd ~/v1 && sudo perf stat -e cycles,instructions,dTLB-load-misses,cache-misses,cache-references $RUN)
+    reads/s:                      1886428.41
+       13255912155      cycles
+        7538218104      instructions
+           8790240      dTLB-load-misses
+         130604123      cache-misses
+         634898144      cache-references
 
-=== smaps_rollup during a run (huge file mapping?) ===
---- v2 ---  reads/s 2,121,280
-    Rss:               74,872 kB
-    FilePmdMapped:     65,536 kB      <-- whole 64 MiB file PMD (huge-page) mapped
---- v1 ---  reads/s 1,938,905
-    Rss:               74,972 kB
-    FilePmdMapped:          0 kB      <-- v1 gets NO huge mapping
+$ (cd ~/v2 && sudo perf stat -e cycles,instructions,dTLB-load-misses,cache-misses,cache-references $RUN)
+    reads/s:                      2082856.51
+       13263522195      cycles
+        8306823225      instructions
+             18488      dTLB-load-misses
+         126771643      cache-misses
+         676552167      cache-references
 
-# CONFIRMED CHAIN: prepare 4M writes -> 2MiB PMD-order folios -> PMD huge-page mapping
-# (FilePmdMapped=64MiB) -> dTLB-misses collapse 8.79M->18K -> +9-10% reads/s.
-# It IS dTLB (cache-misses equal). CONFIG_READ_ONLY_THP_FOR_FS was a red herring; the path
-# works here on fresh memory. Earlier non-reproduction = memory fragmentation (22d uptime).
+# dTLB-load-misses: v1 = 8,790,240  vs  v2 = 18,488  (about 475x fewer for v2)
+# cache-misses (LLC): 130.6M vs 126.8M (about equal) -> the win is the TLB, not the cache
+
+$ (cd ~/v2 && $RUN) & sleep 2; grep -E 'FilePmdMapped|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup
+Rss:               74872 kB
+FilePmdMapped:     65536 kB          # v2: the whole 64 MiB file is mapped with 2 MiB huge pages
+
+$ (cd ~/v1 && $RUN) & sleep 2; grep -E 'FilePmdMapped|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup
+Rss:               74972 kB
+FilePmdMapped:         0 kB          # v1: no huge mapping

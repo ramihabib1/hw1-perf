@@ -24,7 +24,7 @@ TASK1_LOGS = [
     ("task1/p4_callgraph_noload.txt",   "perf sched callgraph, no load"),
 ]
 TASK2_LOGS = [
-    ("task2/p10_reboot_confirmed.txt", "the reproduced gap + perf stat (dTLB) + smaps (FilePmdMapped)"),
+    ("task2/p10_reboot_confirmed.txt", "the gap, with perf stat (dTLB collapse) and smaps (FilePmdMapped=64MiB for v2)"),
     ("task2/p5_folio_hist_v1.txt", "folio-order histogram, v1"),
     ("task2/p5_folio_hist_v2.txt", "folio-order histogram, v2"),
     ("task2/p1b_filefrag.txt",     "filefrag (fragmentation is trivial)"),

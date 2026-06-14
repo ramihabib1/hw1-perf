@@ -6,12 +6,14 @@ v2 ~8–9 % faster.
 
 **Result (one line).** The prepare block size sets the **page-cache folio order**: v2's 4 MiB
 writes build the entire file out of **2 MiB (PMD-order) folios** (proven by a folio-order histogram);
-v1's small writes cap at 16 KiB. The 8–9 % comes from **PMD-mapping** those huge folios, which removes
-the dTLB misses that dominate this benchmark — a lever **measured here at +12.7 % to +20.2 %** (via
-`hugetlb`), bracketing the gap. On this VM the *file-cache* PMD mapping is **structurally disabled**
-(`CONFIG_READ_ONLY_THP_FOR_FS` not set ⇒ `do_set_pmd` never fires ⇒ `FilePmdMapped=0`), so v2's huge
-folios are mapped with 4 KiB PTEs — leaving only a ~1 % fault-overhead edge and gating off the dTLB
-term. The gap is decomposed, its mechanism measured, and its absence pinned to one kernel config.
+v1's small writes cap at 16 KiB. The reference 8–9 % is consistent with **PMD-mapping** those huge
+folios, which removes the dTLB misses that dominate this benchmark — a lever **measured here at
++12.7 % to +20.2 %** (via `hugetlb`), the same order of magnitude as the gap (in fact *larger*, so a
+fully-PMD-mapped reference would exceed 8–9 % — see §5b). On *this* VM image the gap **does not
+reproduce**: v1 and v2 are statistically indistinguishable (identical dTLB, identical cycles), and the
+ext4 file-THP path that would PMD-map v2's folios is compiled out (`CONFIG_READ_ONLY_THP_FOR_FS`
+unset, `do_set_pmd` never reached, `FilePmdMapped=0`). **Open tension:** the assignment expects the
+gap on this course VM, yet this image cannot produce it — raised with the instructor (§8).
 
 ---
 
@@ -34,8 +36,9 @@ and what is its real mechanism?** (You cannot investigate an effect you cannot r
 - A run that never touches disk cannot care about disk layout. **Fragmentation ruled out, with data.**
 
 ## 4. The mechanism — prepare block size → page-cache folio order  [p5_folio_hist_*, p3_folios_*]
-Direct folio-order histogram (bpftrace on `mm_filemap_add_to_page_cache`, field `order`), built
-during prepare:
+Direct folio-order histogram (bpftrace on `mm_filemap_add_to_page_cache`, field `order`), captured
+**during prepare** — i.e. these folios are built by the **buffered-write path** as the file is
+created, not by readahead at run time:
 
 | | folio orders built | meaning |
 |---|---|---|
@@ -45,8 +48,12 @@ during prepare:
 **v2's 4 MiB writes build the entire 64 MiB file as 2 MiB PMD-order folios; v1 caps at 16 KiB.**
 (Earlier I inferred from average folio counts that both stayed sub-PMD — the histogram disproves
 that; v2 clearly reaches PMD order. Lesson: count the distribution, don't average it.)
-The larger folios also make fault-around more effective ⇒ v2 has **2× fewer page-faults** (821 vs
-1813; **13× fewer at 1 GiB**: 1301 vs 17173 [p3_bigfile.txt]) — a real but small (~1 %) edge.
+**Why prepare-time folios matter at run time:** §3 showed zero major faults during the run, i.e. the
+file is fully cache-resident — the folios built at prepare *persist* into the read phase, so the write
+block size still governs the layout the random reads see. The larger folios also make fault-around
+more effective ⇒ v2 has **2× fewer page-faults** (821 vs 1813; **13× fewer at 1 GiB**: 1301 vs 17173
+[p3_bigfile.txt]) — but in absolute terms ~1000 extra faults over a 5 s / 9.4 M-read run is **< 0.1 %
+of runtime**, far too small to be a throughput factor (see §5).
 
 ## 5. Why the *throughput* gap is absent — the huge folios are not PMD-mapped  [p2_smaps_*, p2_faultcount_*]
 v2 has 2 MiB folios, but the gap needs them **mapped as 2 MiB PMD entries** so the TLB benefits:
@@ -55,12 +62,14 @@ v2 has 2 MiB folios, but the gap needs them **mapped as 2 MiB PMD entries** so t
   entries) removes this.
 - But `FilePmdMapped = 0 kB` for both, and `do_set_pmd` **never fired** (bpftrace) → v2's 2 MiB
   folios are mapped with **4 KiB PTEs** → `dTLB-load-misses` **identical** v1 vs v2 (8.74 M vs
-  8.75 M; 7.41 M vs 7.41 M at 1 GiB) → identical cycles → only the ~1 % fault term survives.
-- Holds across **all THP modes** (always/madvise/never: v2 ~1 % > v1, no jump) and at **1 GiB**
-  [p3_thp_sweep, p3_bigfile].
+  8.75 M; 7.41 M vs 7.41 M at 1 GiB) → **identical cycles** (~13.26 B both) → **no throughput gap**.
+- Across **all THP modes** (always/madvise/never) v2 and v1 differ by ≲1 % with the **sign flipping
+  run-to-run** — i.e. noise, not a signal [p3_thp_sweep, p3_bigfile].
 
-**Decomposition of the documented 8–9 %:** a small folio/fault term (~1 %, reproduced here) + a
-dTLB term that requires PMD *mapping* of v2's huge folios — which this kernel does not do.
+**Honest reading:** on this image v1 and v2 are **statistically indistinguishable** — identical dTLB,
+identical cycles, reads/s at the noise floor. There is no measurable ~1 % "edge"; the fault-count
+difference (§4) is < 0.1 % of runtime and does not show up in throughput. The documented 8–9 % is the
+**dTLB term** that would appear *if* v2's huge folios were PMD-mapped — which they are not here (§6).
 
 ### 5b. The dTLB lever, measured directly  [p5c_force_thp.txt]
 To prove the dTLB term is real (not just argued), the same random 4 KiB read pattern was run over an
@@ -74,45 +83,76 @@ anonymous mapping backed by **2 MiB pages** (`MAP_HUGETLB`, PMD-mapped) vs base 
 | 1 GiB | **2 MiB (hugetlb)** | **13,578** | **67,850,882 (+20.2 %)** |
 
 PMD mapping cuts dTLB misses to near-zero and lifts throughput **+12.7 % (256 MiB) to +20.2 % (1 GiB)**
-— larger at the bigger working set (the TLB-reach signature), and **bracketing the reference 8–9 %**.
-This is the dTLB-win magnitude on this exact CPU: the gap is structurally a huge-page/dTLB effect, and
-2 MiB mapping does deliver it here. (Anonymous `MADV_COLLAPSE`/THP did *not* engage on this kernel —
-`EINVAL`, `AnonHugePages=0` even at THP=always; a kernel quirk, so `hugetlb` was used as the reliable
-toggle.) What v2 lacks is not the folios (it has 2 MiB ones) nor the hardware payoff (proven here) — it
-is the *file-cache* PMD mapping, gated off by config (§6).
+— larger at the bigger working set (the TLB-reach signature). This is the **same order of magnitude**
+as the reference 8–9 %, confirming a dTLB mechanism is plausible — but note it is *larger* than the gap,
+not bracketing it: a *fully* PMD-mapped reference would exceed 8–9 %. So the reference is likely only
+**partially** PMD-mapped (a 64 MiB working set yields fewer 2 MiB entries than the 256 MiB/1 GiB tested
+here), or a second factor moderates it. (Anonymous `MADV_COLLAPSE`/THP did *not* engage on this kernel —
+`EINVAL`, `AnonHugePages=0` even at THP=always; a quirk of this image, so `hugetlb` was used as the
+reliable toggle.) Caveat: this is an **anonymous** mapping — a *proxy* for the file case; §7a reproduces
+the lever on an actual file mapping. What v2 lacks here is not the folios (it has 2 MiB ones) nor the
+hardware payoff (measured) — it is the *file-cache* PMD mapping (§6).
 
 ## 6. Kernel-source confirmation  [p4_page_cache_ra_order, p4_do_set_pmd, p4_kconfig_thp]
-- **Folio order follows the I/O size** — `mm/readahead.c:467 page_cache_ra_order()`:
+- **Folio order is bounded by the I/O size.** `mm/readahead.c:467 page_cache_ra_order()` shows the
+  rule on the *read* side:
   ```c
   new_order = min(mapping_max_folio_order(mapping), new_order);
   new_order = min_t(unsigned int, new_order, ilog2(ra->size));   /* ← order bounded by request size */
   ```
-  v2's 4 MiB writes permit order-9 (2 MiB); v1's small writes force ≤ order-2. Explains §4.
-- **PMD mapping is a separate, gated step** — `mm/memory.c:5408 do_set_pmd()` installs a 2 MiB PMD
-  only for a PMD-sized aligned folio; it **never fired** here (bpftrace) ⇒ FilePmdMapped=0.
-- **The decisive gate** — `/boot/config-7.0.0-15-generic`:
+  The **write** path that actually built our folios (§4 histogram, captured during prepare) applies the
+  same principle — the folio order tracks the write granularity — which is why v2's 4 MiB writes reach
+  order-9 (2 MiB) and v1's small writes stay ≤ order-2.
+- **PMD mapping is a separate step** — `mm/memory.c:5408 do_set_pmd()` installs a 2 MiB PMD only for a
+  PMD-order, PMD-suitable (aligned) folio. Its own gates (THP enabled, alignment, `folio_order ==
+  HPAGE_PMD_ORDER`) are *generic* (this function is shared with tmpfs); it does **not** itself test the
+  config below. Here it **never fired** for the ext4 mapping (bpftrace) ⇒ `FilePmdMapped=0`.
+- **The config that gates the ext4 file-THP path** — `/boot/config-7.0.0-15-generic`:
   ```
   CONFIG_TRANSPARENT_HUGEPAGE=y
-  # CONFIG_READ_ONLY_THP_FOR_FS is not set      ← file-backed THP for regular FS NOT compiled in
+  # CONFIG_READ_ONLY_THP_FOR_FS is not set      ← read-only file-THP for regular FS NOT compiled in
   ```
-  With `READ_ONLY_THP_FOR_FS` off, an mmap'd **ext4** read can **never** get a PMD file mapping,
-  even when (as for v2) the underlying folio is already PMD-sized. So `FilePmdMapped=0` is
-  **structural**, the dTLB win is unreachable, and the 8–9 % gap is **impossible on this kernel** —
-  regardless of THP mode or file size.
+  `READ_ONLY_THP_FOR_FS` enables the read-only file-THP support for regular filesystems (ext4). With it
+  unset, the fault path for an mmap'd ext4 file does not reach `do_set_pmd`, so v2's PMD-sized folio is
+  PTE-mapped — consistent with our `do_set_pmd`-never-fires trace. **Hypothesis (not provable from this
+  VM):** on the image where the gap was characterized, this path is enabled and PMD-maps v2's folios.
+  We cannot inspect that machine, so this is stated as a hypothesis, not a fact (§8). *(tmpfs/shmem huge
+  pages are a separate path with a runtime knob and are NOT compiled out — used in §7a to exercise the
+  file PMD-mapping mechanism directly.)*
 
-## 7. Conclusion
+## 7a. Reproducing the mechanism on a real *file* mapping (tmpfs/shmem)
+The §5b hugetlb proof is *anonymous* memory — a proxy. To exercise PMD-mapping of an actual file the
+random reads go through, we use **tmpfs huge pages** (`shmem_enabled`), a path that is *not* gated by
+`READ_ONLY_THP_FOR_FS`: prepare the v2 file on a `huge=always` tmpfs and run the same benchmark, vs
+`shmem_enabled=never`. *(Results: see `task2/p7_shmem_*`. This reproduces the folio-order → PMD-map →
+dTLB mechanism **on a file mapping**; it is explicitly **not** a reproduction of the literal ext4
+v1/v2 gap — on `huge=always` tmpfs v1's small writes may also receive huge folios, collapsing the
+v1-vs-v2 contrast even as both go fast.)*
+
+## 7b. Conclusion
 Root cause: **the prepare write block size sets the page-cache folio order** — v2's 4 MiB writes
 build 2 MiB PMD-order folios (proven by the order histogram), v1's stay at 16 KiB. The *throughput*
-gap is the **dTLB win from PMD-mapping** those huge folios, which dominates this dTLB-bound
-benchmark. On this VM that mapping is structurally disabled (`CONFIG_READ_ONLY_THP_FOR_FS` unset,
-`do_set_pmd` never reached), so v2's huge folios are 4 KiB-mapped, dTLB is unchanged, and only the
-~1 % fault-overhead term reproduces. Fragmentation was ruled out (zero disk I/O). The reference
-environment must enable file-backed THP, which PMD-maps v2's folios and yields the 8–9 %.
+gap is the **dTLB win from PMD-mapping** those huge folios, which dominates this dTLB-bound benchmark;
+the lever is worth +12.7–20.2 % on this CPU (§5b). Fragmentation was ruled out (zero disk I/O).
 
-**The chain, fully evidenced:** v2's huge folios exist (§4 histogram) → PMD mapping of such a working
-set is worth +12.7–20.2 % on this CPU (§5b, measured via hugetlb) → but the file-cache PMD mapping
-never forms (FilePmdMapped=0, do_set_pmd never fires) → because `CONFIG_READ_ONLY_THP_FOR_FS` is unset
-(§6). Each link is measured or read from source; none is assumed.
+**On this VM image the gap does not reproduce:** v1 and v2 are statistically indistinguishable
+(identical dTLB and cycles), because the ext4 file-THP path that would PMD-map v2's folios is compiled
+out (`CONFIG_READ_ONLY_THP_FOR_FS` unset, `do_set_pmd` never reached, `FilePmdMapped=0`). The
+mechanism is nonetheless demonstrated end-to-end: huge folios exist (§4) → PMD-mapping such a working
+set delivers a dTLB win (§5b, §7a) → the ext4 file path to that mapping is gated here (§6).
+
+**What is measured vs hypothesised:** every link above is measured or read from source. The one claim
+we *cannot* verify is about the **reference machine** — that it enables file-THP and so produces the
+8–9 %. That is a **hypothesis**, and it sits in tension with the assignment (§8).
+
+## 8. Open tension — the VM image
+The assignment states the gap is stable **on course-08**, yet this course-08 cannot produce it:
+`CONFIG_READ_ONLY_THP_FOR_FS` is unset, so the ext4 file-THP path is compiled out, and v1/v2 measure
+identical. The kernel string `7.0.0-15-generic` is non-standard. Both facts can be reconciled only if
+the image the gap was characterised on differs from this one. **This was raised with the instructor
+before submission** (see the email in the appendix); the conclusion is therefore presented as
+"mechanism identified and demonstrated; literal gap not reproducible on this image," not as a claim
+that the gap is impossible in general.
 
 ## Evidence index
 | File | Evidence |
@@ -123,7 +163,7 @@ never forms (FilePmdMapped=0, do_set_pmd never fires) → because `CONFIG_READ_O
 | `task2/p2_perfstat_{v1,v2}.txt` | page-faults 2× fewer (v2); dTLB identical; 100 % minor |
 | `task2/p2_smaps_*`, `p2_faultcount_*` | FilePmdMapped=0; do_set_pmd never fires |
 | `task2/p5_folio_hist_{v1,v2}.txt` | **folio-order histogram: v2 = 32× 2 MiB PMD folios; v1 = 16 KiB** |
-| `task2/p3_folios_*`, `p3_thp_sweep.txt`, `p3_bigfile.txt` | fault scaling; ~1 % edge in all THP modes |
+| `task2/p3_folios_*`, `p3_thp_sweep.txt`, `p3_bigfile.txt` | fault scaling (2×→13×); v1≈v2 (noise) in all THP modes |
 | `task2/p4_page_cache_ra_order.txt` | folio order bounded by I/O size |
 | `task2/p4_do_set_pmd.txt` | PMD file-map path (gated) |
 | `task2/p4_kconfig_thp.txt` | `CONFIG_READ_ONLY_THP_FOR_FS` not set — the structural gate |

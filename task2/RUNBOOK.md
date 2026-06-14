@@ -303,6 +303,45 @@ mode 2), do dTLB-load-misses drop sharply vs mode 0, and reads/s rise? The size 
 dTLB-win magnitude on this CPU — the number proving the Phase-4/5 claim. Report AnonHugePages_kB and
 HugePages_Free so we KNOW which runs actually got huge pages. Then vmsync "task2 p5c", report, STOP.
 
+## Phase 7 — Reproduce the mechanism on a REAL file mapping (tmpfs/shmem huge pages)
+ext4 file-THP is compiled out (READ_ONLY_THP_FOR_FS unset), but tmpfs/shmem huge pages are a
+SEPARATE path with a runtime knob — NOT compiled out. Use it to get a genuine PMD-mapped *file*
+mmap (upgrades the §5b anonymous hugetlb proxy to an actual file). Honest scope: this reproduces the
+folio→PMD-map→dTLB MECHANISM on a file, NOT the literal ext4 v1/v2 gap.
+```
+COMMON="--file-num=1 --file-total-size=64M"
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+cat /sys/kernel/mm/transparent_hugepage/shmem_enabled | tee task2/p7_shmem_env.txt
+sudo mkdir -p /mnt/hugetmp
+```
+### 7a — tmpfs huge=always (PMD file mapping should engage)
+```
+sudo mount -t tmpfs -o huge=always,size=2G tmpfs /mnt/hugetmp
+sudo chown $USER /mnt/hugetmp; mkdir -p /mnt/hugetmp/v2
+( cd /mnt/hugetmp/v2 && sysbench fileio $COMMON --file-block-size=4M prepare ) >/dev/null 2>&1
+( cd /mnt/hugetmp/v2 && $RUN ) & sleep 2
+grep -E 'Pmd|Huge|Rss|Anon' /proc/$(pgrep -n sysbench)/smaps_rollup ; wait
+( cd /mnt/hugetmp/v2 && perf stat -e dTLB-load-misses,cycles,instructions $RUN ) 2>&1
+```
+all of the above → `2>&1 | tee task2/p7_shmem_huge.txt`
+### 7b — same tmpfs, huge=never (clean on/off toggle)
+```
+sudo umount /mnt/hugetmp
+sudo mount -t tmpfs -o huge=never,size=2G tmpfs /mnt/hugetmp
+sudo chown $USER /mnt/hugetmp; mkdir -p /mnt/hugetmp/v2
+( cd /mnt/hugetmp/v2 && sysbench fileio $COMMON --file-block-size=4M prepare ) >/dev/null 2>&1
+( cd /mnt/hugetmp/v2 && $RUN ) & sleep 2
+grep -E 'Pmd|Huge|Rss|Anon' /proc/$(pgrep -n sysbench)/smaps_rollup ; wait
+( cd /mnt/hugetmp/v2 && perf stat -e dTLB-load-misses,cycles,instructions $RUN ) 2>&1
+```
+all of the above → `2>&1 | tee task2/p7_shmem_base.txt`, then `sudo umount /mnt/hugetmp`.
+PREDICT FIRST (ShmemPmdMapped, dTLB-misses, reads/s for each). Discriminating read:
+- huge=always: ShmemPmdMapped>0, dTLB-misses collapse ~8.7M→thousands, reads/s rise → MECHANISM
+  reproduced on a file mapping. (Do NOT relabel as "the ext4 gap reproduced".)
+- huge=always ALSO shows no PMD → second data point that THP is broken on this image
+  (MADV_COLLAPSE gave EINVAL, anon THP refused at [always]) → strengthens the wrong-image argument.
+Then `./scripts/vmsync "task2 p7 shmem file-THP"`, report, STOP.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

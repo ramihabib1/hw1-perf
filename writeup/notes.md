@@ -157,9 +157,16 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
   reads can NEVER get a PMD mapping ⇒ FilePmdMapped=0 structurally ⇒ dTLB win unreachable ⇒
   8–9% gap impossible on this kernel.
 
+### Phase 5 — folio histogram CORRECTS the earlier "sub-PMD" claim
+- [p5_folio_hist_*] v1 = 4096× order-2 (16 KiB); **v2 = 32× order-9 (2 MiB / PMD) = whole file.**
+  Earlier Phase-3 inference "folios stay sub-PMD" was WRONG (averaged counts); the histogram shows
+  v2 DOES reach PMD-order folios. The gate is the PMD *mapping*, not the folio size.
+- [p5_thp_dtlb_test] anon THP microbench INCONCLUSIVE — MADV_HUGEPAGE never engaged THP
+  (AnonHugePages=0 both), so dTLB lever magnitude not measured. Not contrary evidence.
+
 ### Conclusion — TASK 2 COMPLETE
-Root cause = page-cache folio size set by prepare block size (v2 4M writes → ~2.2× larger folios
-→ 2–13× fewer page-faults, confirmed). The 8–9% throughput magnitude is a dTLB/huge-page term
-that needs PMD mapping of those folios; structurally disabled here (CONFIG_READ_ONLY_THP_FOR_FS
-unset), so only the ~1% folio/fault term reproduces. Fragmentation ruled out (zero disk I/O).
-Full writeup: `writeup/task2.md`.
+Root cause = prepare block size sets page-cache folio order: v2 4M writes build 2 MiB PMD-order
+folios (proven by histogram), v1 stays 16 KiB. The 8–9% is the dTLB win from PMD-MAPPING v2's huge
+folios; structurally disabled here (CONFIG_READ_ONLY_THP_FOR_FS unset → do_set_pmd never fires →
+FilePmdMapped=0 → 4K PTEs → dTLB unchanged), so only the ~1% fault term reproduces. Fragmentation
+ruled out (zero disk I/O). Open: dTLB magnitude unmeasured (5b didn't engage THP). Writeup: task2.md.

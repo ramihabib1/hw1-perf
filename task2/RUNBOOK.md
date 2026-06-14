@@ -342,6 +342,39 @@ PREDICT FIRST (ShmemPmdMapped, dTLB-misses, reads/s for each). Discriminating re
   (MADV_COLLAPSE gave EINVAL, anon THP refused at [always]) → strengthens the wrong-image argument.
 Then `./scripts/vmsync "task2 p7 shmem file-THP"`, report, STOP.
 
+## Phase 8 — Back to basics: clean EXACT reproduction + FULL counters (incl. LLC)
+The gap reproduces for others on this VM ⇒ we erred. Re-run the assignment verbatim on an IDLE
+system and capture the counter we skipped (LLC) to find what really differs.
+
+### 8a — is the VM busy? (test the "background load suppressed it" idea)
+```
+{ uptime; echo; ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -12; echo;
+  cat /proc/sys/vm/transparent_hugepage/enabled 2>/dev/null;
+  grep -E 'MemFree|MemAvailable|AnonHugePages' /proc/meminfo; } 2>&1 | tee task2/p8_vm_state.txt
+```
+If anything heavy is running (node/bun/claude/sysbench), pause/stop it for the measurement if you can.
+
+### 8b — EXACT assignment sequence, fresh, with FULL counters
+```
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+rm -rf ~/v1 ~/v2; mkdir -p ~/v1 ~/v2
+COMMON="--file-num=1 --file-total-size=64M"
+( cd ~/v1 && sysbench fileio $COMMON prepare ) >/dev/null
+( cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare ) >/dev/null
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+EV="cycles,instructions,dTLB-load-misses,LLC-loads,LLC-load-misses,L1-dcache-load-misses"
+# run v1 THEN v2 (assignment order), 3 reps, FULL counters:
+for rep in 1 2 3; do
+  echo "=== rep $rep v1 ==="; ( cd ~/v1 && perf stat -e $EV $RUN ) 2>&1 | grep -E 'reads/s|cycles|instructions|dTLB|LLC|L1-dcache|elapsed'
+  echo "=== rep $rep v2 ==="; ( cd ~/v2 && perf stat -e $EV $RUN ) 2>&1 | grep -E 'reads/s|cycles|instructions|dTLB|LLC|L1-dcache|elapsed'
+done 2>&1 | tee task2/p8_clean_fullcounters.txt
+# FilePmdMapped on a clean v2 run (did our cache-thrashing earlier suppress it?):
+( cd ~/v2 && $RUN ) & sleep 2; grep -E 'Pmd|Huge|Anon|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup 2>&1 | tee -a task2/p8_clean_fullcounters.txt; wait
+```
+Read: does v2 show ~8% higher reads/s now? If so, WHICH counter differs — **LLC-load-misses**?
+dTLB? cycles? That counter is the real mechanism. If still flat, report the full counters anyway
+so we can see where v1 and v2 actually diverge (or confirm they don't). Then vmsync, report, STOP.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

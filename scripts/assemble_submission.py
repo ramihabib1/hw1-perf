@@ -29,6 +29,7 @@ TASK2_LOGS = [
     ("task2/p5_folio_hist_v2.txt", "folio-order histogram, v2"),
     ("task2/p1b_filefrag.txt",     "filefrag (fragmentation is trivial)"),
     ("task2/p2_perfstat_v1.txt",   "perf stat v1 (page-faults are all minor -> fully cached)"),
+    ("task2/p5c_force_thp.txt",    "independent check: 2 MiB (MAP_HUGETLB) vs 4 KiB pages, same read pattern"),
 ]
 
 def appendix(title, items):

@@ -14,6 +14,12 @@ faster:
 Both files hold the same data and the read command is identical, so the only difference is how
 each file was written during prepare.
 
+## How I approached it
+
+The difference has to come from how each file was written, so I considered three possible causes
+and tested each: disk fragmentation, CPU cache (LLC) behaviour, and how the kernel stores the file
+in the page cache. I ruled out the first two with counters and traced the third to the mechanism.
+
 ## Ruling out disk fragmentation
 
 The obvious guess is that v1's small writes fragment the file on disk. But the file is only 64 MiB
@@ -22,6 +28,13 @@ confirms this: during the run the page faults are all minor (page-faults equals 
 major faults), which means nothing is read from disk. If the disk is never touched, its layout
 cannot affect the result. filefrag also shows both files are basically contiguous (2 extents vs 1).
 So fragmentation is not the cause.
+
+## Ruling out the CPU cache
+
+The next guess is that v2 has better last-level-cache behaviour. If so it would show fewer
+cache-misses. perf stat shows the opposite: cache-misses are about equal, 130.6M for v1 and 126.8M
+for v2, at similar cache-references. So the speedup is not a cache effect, which is what later points
+me at the TLB instead.
 
 ## What actually differs: folio size
 
@@ -52,9 +65,16 @@ few MiB, so random reads across a 64 MiB file miss almost every time. perf stat 
 | v1 | 8,790,240 |
 | v2 | 18,488 (about 475x fewer) |
 
-A handful of 2 MiB pages cover the whole file, so v2 almost never misses the TLB. The LLC
-cache-misses are about the same for both (130M vs 127M), so this is a TLB effect and not a cache
-effect. Fewer TLB misses means fewer page-table walks, and that is the ~9% speedup.
+A handful of 2 MiB pages cover the whole file, so v2 almost never misses the TLB. Fewer TLB misses
+means fewer page-table walks, and that is the ~9% speedup.
+
+## Checking the size of the effect independently
+
+To confirm that 2 MiB mapping really is worth this much on this CPU, I ran the same random 4 KiB
+read pattern over a mapping backed by explicit 2 MiB pages (MAP_HUGETLB) versus normal 4 KiB pages.
+The dTLB misses dropped from about 195M to a few thousand, and throughput rose +12.7% on a 256 MiB
+working set and +20.2% on 1 GiB. That is the same order as the file gap, and it isolates the effect
+to the page size alone, so the mechanism is not specific to the file path.
 
 ## Kernel source
 

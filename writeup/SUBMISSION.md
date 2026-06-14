@@ -105,6 +105,12 @@ faster:
 Both files hold the same data and the read command is identical, so the only difference is how
 each file was written during prepare.
 
+## How I approached it
+
+The difference has to come from how each file was written, so I considered three possible causes
+and tested each: disk fragmentation, CPU cache (LLC) behaviour, and how the kernel stores the file
+in the page cache. I ruled out the first two with counters and traced the third to the mechanism.
+
 ## Ruling out disk fragmentation
 
 The obvious guess is that v1's small writes fragment the file on disk. But the file is only 64 MiB
@@ -113,6 +119,13 @@ confirms this: during the run the page faults are all minor (page-faults equals 
 major faults), which means nothing is read from disk. If the disk is never touched, its layout
 cannot affect the result. filefrag also shows both files are basically contiguous (2 extents vs 1).
 So fragmentation is not the cause.
+
+## Ruling out the CPU cache
+
+The next guess is that v2 has better last-level-cache behaviour. If so it would show fewer
+cache-misses. perf stat shows the opposite: cache-misses are about equal, 130.6M for v1 and 126.8M
+for v2, at similar cache-references. So the speedup is not a cache effect, which is what later points
+me at the TLB instead.
 
 ## What actually differs: folio size
 
@@ -143,9 +156,16 @@ few MiB, so random reads across a 64 MiB file miss almost every time. perf stat 
 | v1 | 8,790,240 |
 | v2 | 18,488 (about 475x fewer) |
 
-A handful of 2 MiB pages cover the whole file, so v2 almost never misses the TLB. The LLC
-cache-misses are about the same for both (130M vs 127M), so this is a TLB effect and not a cache
-effect. Fewer TLB misses means fewer page-table walks, and that is the ~9% speedup.
+A handful of 2 MiB pages cover the whole file, so v2 almost never misses the TLB. Fewer TLB misses
+means fewer page-table walks, and that is the ~9% speedup.
+
+## Checking the size of the effect independently
+
+To confirm that 2 MiB mapping really is worth this much on this CPU, I ran the same random 4 KiB
+read pattern over a mapping backed by explicit 2 MiB pages (MAP_HUGETLB) versus normal 4 KiB pages.
+The dTLB misses dropped from about 195M to a few thousand, and throughput rose +12.7% on a 256 MiB
+working set and +20.2% on 1 GiB. That is the same order as the file gap, and it isolates the effect
+to the page size alone, so the mechanism is not specific to the file path.
 
 ## Kernel source
 
@@ -611,4 +631,108 @@ Threads fairness:
 
        4.992305000 seconds user
        0.008995000 seconds sys
+~~~~
+
+### task2/p5c_force_thp.txt
+*independent check: 2 MiB (MAP_HUGETLB) vs 4 KiB pages, same read pattern*
+
+~~~~text
+=== 256MB mode=0 ===
+mode=0 MB=256 AnonHugePages_kB=0
+mode=0 MB=256 reads/s=62759989 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 0':
+
+         194681566      dTLB-load-misses                                                      
+        8881399109      cycles                                                                
+        3731522806      instructions                                                          
+
+       3.359090688 seconds time elapsed
+
+       3.192268000 seconds user
+       0.164014000 seconds sys
+
+
+=== 256MB mode=1 ===
+MADV_COLLAPSE failed: Invalid argument
+mode=1 MB=256 AnonHugePages_kB=0
+mode=1 MB=256 reads/s=62624913 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 1':
+
+         194680010      dTLB-load-misses                                                      
+        8903528253      cycles                                                                
+        3725908083      instructions                                                          
+
+       3.365086766 seconds time elapsed
+
+       3.205633000 seconds user
+       0.158970000 seconds sys
+
+
+=== 1024MB mode=0 ===
+mode=0 MB=1024 AnonHugePages_kB=0
+mode=0 MB=1024 reads/s=56452905 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 0':
+
+         198810736      dTLB-load-misses                                                      
+       11112291706      cycles                                                                
+        4656052798      instructions                                                          
+
+       4.230569558 seconds time elapsed
+
+       3.592510000 seconds user
+       0.636054000 seconds sys
+
+
+=== 1024MB mode=1 ===
+MADV_COLLAPSE failed: Invalid argument
+mode=1 MB=1024 AnonHugePages_kB=0
+mode=1 MB=1024 reads/s=56409139 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 1':
+
+         198815712      dTLB-load-misses                                                      
+       11153220204      cycles                                                                
+        4654098855      instructions                                                          
+
+       4.242477699 seconds time elapsed
+
+       3.609043000 seconds user
+       0.632823000 seconds sys
+
+
+HugePages_Total:     600
+HugePages_Free:      600
+=== 256MB mode=2 (MAP_HUGETLB) ===
+mode=2 MB=256 AnonHugePages_kB=0 (hugetlb: see HugePages_Free)
+mode=2 MB=256 reads/s=70738072 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 2':
+
+              2753      dTLB-load-misses                                                      
+        7657971203      cycles                                                                
+        3429336113      instructions                                                          
+
+       2.883778716 seconds time elapsed
+
+       2.859685000 seconds user
+       0.020998000 seconds sys
+
+
+=== 1024MB mode=2 (MAP_HUGETLB) ===
+mode=2 MB=1024 AnonHugePages_kB=0 (hugetlb: see HugePages_Free)
+mode=2 MB=1024 reads/s=67850882 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 2':
+
+             13578      dTLB-load-misses                                                      
+        8412641647      cycles                                                                
+        3455270546      instructions                                                          
+
+       3.159761606 seconds time elapsed
+
+       3.075510000 seconds user
+       0.081935000 seconds sys
 ~~~~

@@ -16,3 +16,6 @@ test_file.*
 # lecture PDFs: local-only, VM doesn't need them, keeps the sync repo light
 *.pdf
 writeup/SUBMISSION.html
+
+# but DO track the final submission PDF (deliverable)
+!writeup/SUBMISSION.pdf

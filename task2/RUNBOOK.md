@@ -375,6 +375,54 @@ Read: does v2 show ~8% higher reads/s now? If so, WHICH counter differs — **LL
 dTLB? cycles? That counter is the real mechanism. If still flat, report the full counters anyway
 so we can see where v1 and v2 actually diverge (or confirm they don't). Then vmsync, report, STOP.
 
+## Phase 11 — Settle WHY it flipped (test, don't assert) + raw provenance
+Run on the working (post-reboot, gap-present) VM, under `script` so every output is raw/verbatim.
+Do NOT edit the log afterwards.
+```
+script -f ~/hw1/logs/task2_settle_$(date +%Y%m%d_%H%M).log
+COMMON="--file-num=1 --file-total-size=64M"
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+
+# (A) config: compile-time, so it should read the SAME as before (resolves the contradiction):
+grep READ_ONLY_THP_FOR_FS /boot/config-$(uname -r); zcat /proc/config.gz 2>/dev/null | grep READ_ONLY_THP_FOR_FS
+
+# (B) is the do_set_pmd CALL SITE guarded by that config? read finish_fault + grep mm/:
+F=$(ls -d /usr/src/linux-* | head -1); echo "src=$F"
+awk '/finish_fault\(struct vm_fault/{p=1} p{print} /^}/{if(p)exit}' $F/mm/memory.c
+grep -rn 'READ_ONLY_THP_FOR_FS' $F/mm/ $F/include/linux/huge_mm.h 2>/dev/null
+
+# (C) does do_set_pmd actually FIRE for v2 (retval 0) and fall back for v1 (nonzero)?
+echo "== v2 do_set_pmd retvals =="; sudo bpftrace -e 'kretprobe:do_set_pmd { @[retval] = count(); }' -c "bash -lc 'cd ~/v2 && $RUN'"
+echo "== v1 do_set_pmd retvals =="; sudo bpftrace -e 'kretprobe:do_set_pmd { @[retval] = count(); }' -c "bash -lc 'cd ~/v1 && $RUN'"
+
+# (D) current THP knob state (working system):
+grep -r . /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/defrag \
+        /sys/kernel/mm/transparent_hugepage/hugepages-2048kB/enabled /sys/kernel/mm/transparent_hugepage/shmem_enabled 2>/dev/null
+
+# (E) RAW reproduction for provenance (verbatim, unedited):
+echo "== baseline =="; (cd ~/v1 && $RUN) | grep reads/s; (cd ~/v2 && $RUN) | grep reads/s
+echo "== v1 perf =="; (cd ~/v1 && sudo perf stat -e dTLB-load-misses,cache-misses,cycles,instructions $RUN)
+echo "== v2 perf =="; (cd ~/v2 && sudo perf stat -e dTLB-load-misses,cache-misses,cycles,instructions $RUN)
+echo "== v2 smaps =="; (cd ~/v2 && $RUN) & sleep 2; grep -E 'FilePmdMapped|AnonHugePages|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+echo "== v1 smaps =="; (cd ~/v1 && $RUN) & sleep 2; grep -E 'FilePmdMapped|AnonHugePages|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+
+# (F) toggle test: does flipping THP off kill the gap, and restoring bring it back?
+echo "== THP=madvise =="; echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+(cd ~/v2 && $RUN) & sleep 2; grep FilePmdMapped /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+(cd ~/v1 && $RUN) | grep reads/s; (cd ~/v2 && $RUN) | grep reads/s
+echo "== THP=always (restore) =="; echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+(cd ~/v2 && $RUN) & sleep 2; grep FilePmdMapped /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+(cd ~/v1 && $RUN) | grep reads/s; (cd ~/v2 && $RUN) | grep reads/s
+exit
+```
+Then `cd ~/hw1 && ./scripts/vmsync "task2 p11 settle + raw"`.
+Interpretation: (B) tells us if the config gates the fault path (resolves the contradiction).
+(C) confirms do_set_pmd fires for v2 only. (F) tells us if a THP setting is the on/off lever — if
+madvise kills it and always restores it, the flip was a THP-mode effect (e.g. a non-default knob
+before reboot), NOT fragmentation. Whatever (F) shows is the real explanation to write.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

@@ -64,11 +64,11 @@ effect. Fewer TLB misses means fewer page-table walks, and that is the ~9% speed
 - `mm/memory.c`, `do_set_pmd`: installs a 2 MiB huge-page mapping, but only when the folio is
   already PMD-sized. It fires for v2 and falls back to 4 KiB pages for v1.
 
-## One thing that tripped me up
+## A note on reproducing it
 
-At first the gap did not show up at all. v1 and v2 measured identical and FilePmdMapped was 0 for
-both. The VM had 22 days of uptime and its memory was fragmented, so the kernel could not find
-2 MiB of contiguous free memory to build the huge mappings (anonymous huge pages also refused to
-allocate). After I rebooted the VM, memory was clean and the gap appeared on the very first run.
-So the effect depends on the system being able to allocate huge pages, which a long-running,
-fragmented machine can quietly prevent.
+The gap only shows up when the kernel actually installs the huge-page mapping (FilePmdMapped > 0).
+On my first attempts it did not: v1 and v2 measured identical and FilePmdMapped was 0 for both,
+even though v2's folios were already built at 2 MiB. The mapping started working after I rebooted
+the VM. So the folio is built either way; what changed is whether `do_set_pmd` installs the PMD
+entry for it. The trigger for that flip is documented in the appendix log
+(`task2_settle_*.log`): [TRIGGER — filled from the do_set_pmd retprobe + THP-setting toggle].

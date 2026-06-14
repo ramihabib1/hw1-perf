@@ -423,6 +423,42 @@ Interpretation: (B) tells us if the config gates the fault path (resolves the co
 madvise kills it and always restores it, the flip was a THP-mode effect (e.g. a non-default knob
 before reboot), NOT fragmentation. Whatever (F) shows is the real explanation to write.
 
+## Phase 12 — FRESH-BOOT raw capture (the gap is transient — run this FIRST after reboot)
+The gap exists only in the minutes right after a reboot. So: `sudo reboot`, reconnect, and make
+THIS the very first thing you run (under `script`, verbatim, no editing). Uses the working
+background-bpftrace idiom (the `-c "bash -lc '...'"` form word-splits on this build).
+```
+script -f ~/hw1/logs/task2_fresh_$(date +%Y%m%d_%H%M).log
+COMMON="--file-num=1 --file-total-size=64M"
+RUN="sysbench fileio $COMMON --file-test-mode=rndrd --file-io-mode=mmap --file-block-size=4K --time=5 run"
+rm -rf ~/v1 ~/v2; mkdir -p ~/v1 ~/v2
+(cd ~/v1 && sysbench fileio $COMMON prepare) >/dev/null
+(cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare) >/dev/null
+
+echo "===== BASELINE (the gap) ====="
+(cd ~/v1 && $RUN) | grep reads/s ; (cd ~/v2 && $RUN) | grep reads/s
+
+echo "===== PERF dTLB (v1 then v2) ====="
+(cd ~/v1 && sudo perf stat -e dTLB-load-misses,cache-misses $RUN)
+(cd ~/v2 && sudo perf stat -e dTLB-load-misses,cache-misses $RUN)
+
+echo "===== SMAPS FilePmdMapped ====="
+(cd ~/v2 && $RUN) & sleep 2; echo "v2:"; grep -E 'FilePmdMapped|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+(cd ~/v1 && $RUN) & sleep 2; echo "v1:"; grep -E 'FilePmdMapped|Rss' /proc/$(pgrep -n sysbench)/smaps_rollup; wait
+
+echo "===== do_set_pmd retprobe, v2 (expect retval 0 = installed) ====="
+sudo bpftrace -e 'kretprobe:do_set_pmd { @ret = count(); }' >/tmp/pmd.txt 2>&1 &
+BT=$!; sleep 1; (cd ~/v2 && $RUN) >/dev/null; sleep 1; sudo kill -INT $BT; sleep 1; cat /tmp/pmd.txt
+
+echo "===== folio order built by v2 prepare (expect order 9 = 2 MiB) ====="
+sudo bpftrace -e 'tracepoint:filemap:mm_filemap_add_to_page_cache { @order = hist(args->order); }' >/tmp/folio.txt 2>&1 &
+BT=$!; sleep 1; rm -f ~/v2/test_file.0; (cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare) >/dev/null; sleep 1; sudo kill -INT $BT; sleep 1; cat /tmp/folio.txt
+exit
+```
+Then `cd ~/hw1 && ./scripts/vmsync "task2 p12 fresh-boot raw"`. If the gap somehow isn't there even
+fresh, that itself is informative (note it). Expect: v2 +~9%, FilePmdMapped v2=65536/v1=0, dTLB v2≪v1,
+do_set_pmd count>0 for v2, folio histogram peak at order 9.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

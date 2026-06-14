@@ -2929,3 +2929,111 @@ mode=2 MB=1024 reads/s=67850882 sum=200000000
        3.075510000 seconds user
        0.081935000 seconds sys
 ~~~~
+
+### `task2/p8_clean_fullcounters.txt`
+
+~~~~text
+=== rep 1 v1 ===
+    reads/s:                      1874293.65
+       13242662633      cycles                                                                
+        7492847052      instructions                                                          
+           8633794      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349782120      L1-dcache-load-misses                                                 
+       5.009091332 seconds time elapsed
+=== rep 1 v2 ===
+    reads/s:                      1893155.68
+       13250457666      cycles                                                                
+        7558088218      instructions                                                          
+           8753237      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351463001      L1-dcache-load-misses                                                 
+       5.007510366 seconds time elapsed
+=== rep 2 v1 ===
+    reads/s:                      1890857.03
+       13237916689      cycles                                                                
+        7558999952      instructions                                                          
+           8754541      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349527788      L1-dcache-load-misses                                                 
+       5.008712152 seconds time elapsed
+=== rep 2 v2 ===
+    reads/s:                      1891963.36
+       13247927986      cycles                                                                
+        7553324385      instructions                                                          
+           8734566      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351002213      L1-dcache-load-misses                                                 
+       5.007475160 seconds time elapsed
+=== rep 3 v1 ===
+    reads/s:                      1871424.83
+       13258425588      cycles                                                                
+        7480843797      instructions                                                          
+           8652185      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         349515698      L1-dcache-load-misses                                                 
+       5.008804272 seconds time elapsed
+=== rep 3 v2 ===
+    reads/s:                      1892519.41
+       13251841827      cycles                                                                
+        7555693849      instructions                                                          
+           8752152      dTLB-load-misses                                                      
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+         351761434      L1-dcache-load-misses                                                 
+       5.007417543 seconds time elapsed
+Rss:               74908 kB
+Pss_Anon:           1804 kB
+Anonymous:          1804 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+~~~~
+
+### `task2/p8_vm_state.txt`
+
+~~~~text
+ 13:08:37 up 22 days, 21:51,  2 users,  load average: 0.00, 0.00, 0.00
+
+    PID COMMAND         %CPU %MEM
+  96760 claude           0.8  4.3
+  95134 claude           0.8  4.5
+  96737 sshd-session     0.0  0.0
+  95108 sshd-session     0.0  0.0
+   9319 chronyd          0.0  0.1
+    812 multipathd       0.0  0.1
+      1 systemd          0.0  0.2
+  94990 systemd          0.0  0.1
+  97587 kworker/0:2-cgr  0.0  0.0
+   1258 dbus-daemon      0.0  0.0
+     54 kcompactd0       0.0  0.0
+
+MemFree:         6352420 kB
+MemAvailable:    7093804 kB
+AnonHugePages:     20480 kB
+~~~~
+
+### `task2/p9_recheck.txt`
+
+~~~~text
+# Task 2 — recheck after instructor enabled unprivileged perf access (perf_event_paranoid=-1)
+# LONG-UPTIME VM (pre-reboot). Generic cache counters (cache-misses/cache-references) now work,
+# even though the named LLC-load-misses event was <not supported>. Gap still ABSENT here.
+
+perf_event_paranoid = -1
+
+      rep   v1 reads/s   v2 reads/s   v1 cache-miss  v2 cache-miss  v1 cache-ref  v2 cache-ref  v1 dTLB  v2 dTLB
+      1     1,852,248    1,869,100    140.3M         144.4M         624.8M        629.2M        8.61M    8.70M
+      2     1,861,243    1,856,784    140.9M         142.9M         627.9M        625.9M        8.65M    8.64M
+
+# Read: still no gap (v2 +0.9% / -0.2% = noise). cache-misses (LLC) is slightly HIGHER for v2 (the
+# wrong direction for a cache explanation) at ~equal references; dTLB/cycles/instructions/L1 all flat.
+# Every counter agrees v1 == v2 on the long-uptime VM. (After REBOOT the gap appears — p10.)
+~~~~

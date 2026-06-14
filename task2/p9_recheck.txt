@@ -1,0 +1,13 @@
+# Task 2 — recheck after instructor enabled unprivileged perf access (perf_event_paranoid=-1)
+# LONG-UPTIME VM (pre-reboot). Generic cache counters (cache-misses/cache-references) now work,
+# even though the named LLC-load-misses event was <not supported>. Gap still ABSENT here.
+
+perf_event_paranoid = -1
+
+      rep   v1 reads/s   v2 reads/s   v1 cache-miss  v2 cache-miss  v1 cache-ref  v2 cache-ref  v1 dTLB  v2 dTLB
+      1     1,852,248    1,869,100    140.3M         144.4M         624.8M        629.2M        8.61M    8.70M
+      2     1,861,243    1,856,784    140.9M         142.9M         627.9M        625.9M        8.65M    8.64M
+
+# Read: still no gap (v2 +0.9% / -0.2% = noise). cache-misses (LLC) is slightly HIGHER for v2 (the
+# wrong direction for a cache explanation) at ~equal references; dTLB/cycles/instructions/L1 all flat.
+# Every counter agrees v1 == v2 on the long-uptime VM. (After REBOOT the gap appears — p10.)

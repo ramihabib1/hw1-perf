@@ -164,7 +164,15 @@ placement-controlled toggle + histogram + callgraph + source. Full writeup: `wri
 - [p5_thp_dtlb_test] anon THP microbench INCONCLUSIVE — MADV_HUGEPAGE never engaged THP
   (AnonHugePages=0 both), so dTLB lever magnitude not measured. Not contrary evidence.
 
-### Conclusion — TASK 2 COMPLETE
+### TASK 2 SOLVED — gap reproduced after reboot [p10_reboot_confirmed.txt]
+22-day uptime → fragmented memory → huge pages couldn't allocate → do_set_pmd never fired →
+FilePmdMapped=0 → no gap. REBOOT → fresh memory → v2 folios PMD-mapped → gap appears (+9.4%).
+Confirmed chain: 4M writes → 2MiB PMD folios → PMD huge-page map (FilePmdMapped v2=64MiB, v1=0) →
+dTLB-misses collapse 8.79M→18K (~475×) → +9-10% reads/s. It IS dTLB (cache-misses equal, ~130M both).
+CONFIG_READ_ONLY_THP_FOR_FS was a RED HERRING (file PMD mapping works here on fresh memory).
+Writeup rewritten: writeup/task2.md. Lesson: THP effects depend on runtime memory state.
+
+### (superseded) earlier Conclusion — TASK 2 COMPLETE
 Root cause = prepare block size sets page-cache folio order: v2 4M writes build 2 MiB PMD-order
 folios (proven by histogram), v1 stays 16 KiB. The 8–9% is the dTLB win from PMD-MAPPING v2's huge
 folios; structurally disabled here (CONFIG_READ_ONLY_THP_FOR_FS unset → do_set_pmd never fires →

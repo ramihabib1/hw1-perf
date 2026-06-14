@@ -1,0 +1,36 @@
+# Task 2 — GAP REPRODUCED after fresh reboot (manual SSH session)
+# 22-day uptime had fragmented memory → huge pages couldn't allocate → no PMD map → no gap.
+# Fresh boot → memory defragmented → v2 folios PMD-mapped → gap appears. kernel 7.0.0-15-generic.
+
+=== fresh-boot baseline (verbatim assignment sequence) ===
+v1 reads/s: 1,942,670
+v2 reads/s: 2,124,442      (+9.4%)
+
+=== perf stat v1 vs v2 (same RUN) ===
+--- v1 ---
+    reads/s:           1,886,428
+    cycles:            13,255,912,155
+    instructions:       7,538,218,104
+    dTLB-load-misses:       8,790,240
+    cache-misses:         130,604,123
+    cache-references:     634,898,144
+--- v2 ---
+    reads/s:           2,082,856
+    cycles:            13,263,522,195
+    instructions:       8,306,823,225
+    dTLB-load-misses:          18,488      <-- ~475x FEWER than v1
+    cache-misses:         126,771,643      <-- ~equal to v1 (NOT the driver)
+    cache-references:     676,552,167
+
+=== smaps_rollup during a run (huge file mapping?) ===
+--- v2 ---  reads/s 2,121,280
+    Rss:               74,872 kB
+    FilePmdMapped:     65,536 kB      <-- whole 64 MiB file PMD (huge-page) mapped
+--- v1 ---  reads/s 1,938,905
+    Rss:               74,972 kB
+    FilePmdMapped:          0 kB      <-- v1 gets NO huge mapping
+
+# CONFIRMED CHAIN: prepare 4M writes -> 2MiB PMD-order folios -> PMD huge-page mapping
+# (FilePmdMapped=64MiB) -> dTLB-misses collapse 8.79M->18K -> +9-10% reads/s.
+# It IS dTLB (cache-misses equal). CONFIG_READ_ONLY_THP_FOR_FS was a red herring; the path
+# works here on fresh memory. Earlier non-reproduction = memory fragmentation (22d uptime).

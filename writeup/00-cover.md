@@ -20,12 +20,12 @@ source under `/usr/src`**. Raw tool output for every probe is filed under `task1
   cores, making every round-trip a cross-core wakeup (~11 µs); background load removes the idle
   CPUs, so the pair is co-located on one core (~5 µs). Frequency (DVFS) and idle/HLT cost were
   ruled out with data; confirmed at `kernel/sched/fair.c:select_idle_sibling`.
-- **Task 2 — v2 (4 MiB prepare) reads faster.** Cause: **prepare block size sets page-cache folio
-  order** — v2 builds 2 MiB PMD-order folios, v1 stays at 16 KiB; the 8–9 % is the **dTLB win from
-  PMD-mapping** those folios (the lever measured here at +12.7–20.2 % via hugetlb). **On this VM image
-  the gap does not reproduce** — v1 and v2 are statistically indistinguishable, because the ext4
-  file-THP path is compiled out (`CONFIG_READ_ONLY_THP_FOR_FS` unset). The assignment expects the gap
-  on this VM, so this contradiction was raised with the instructor (Task 2 §8). Fragmentation ruled
-  out (zero disk I/O); confirmed in `mm/readahead.c`, `mm/memory.c`, and the kernel config.
+- **Task 2 — v2 (4 MiB prepare) reads ~9 % faster (reproduced).** Cause: **prepare block size sets
+  page-cache folio order** — v2's 4 MiB writes build 2 MiB PMD-order folios, v1 stays at 16 KiB.
+  v2's folios are **mapped as 2 MiB huge pages** (`FilePmdMapped = 64 MiB`, v1 = 0), which **collapses
+  dTLB misses ~475× (8.79 M → 18 K)**; since the random read is dTLB-bound, that is the +9–10 %. It is
+  a TLB effect (LLC misses equal), not disk (zero I/O). Confirmed in `mm/memory.c:do_set_pmd` and
+  `mm/readahead.c:page_cache_ra_order`. *(The effect was initially hidden by memory fragmentation
+  after 22 days of VM uptime — a reboot restored it; see Task 2 §7.)*
 
 ---

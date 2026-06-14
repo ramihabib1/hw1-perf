@@ -182,6 +182,68 @@ huge PMD mapping when the folio is PMD-order AND aligned (why FilePmdMapped=0 wi
 if `CONFIG_READ_ONLY_THP_FOR_FS` is **not set**, mmap'd ext4 reads can *never* get PMD file mappings
 → the dTLB-driven gap is structurally impossible on this kernel. **Student makes the final connection.**
 
+## Phase 5 — Prove the mechanism (don't just assert it) + the histogram
+Closes two audit gaps: (a) a real histogram, (b) confirm the dTLB/huge-page lever is actually
+worth the gap on this hardware — the lecturer's "toggle the effect / measure again" (intro s.37).
+
+### 5a — Folio-order histogram during prepare (the "histogram" data form)
+```
+COMMON="--file-num=1 --file-total-size=64M"
+# find the right function/arg first:
+sudo bpftrace -l 'kprobe:filemap_alloc_folio' ; sudo bpftrace -l 'tracepoint:filemap:*'
+# folio order distribution (arg1 of filemap_alloc_folio is the order; verify & adjust):
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+sudo bpftrace -e 'kprobe:filemap_alloc_folio { @order_v1 = lhist(arg1,0,12,1); }' \
+  -c "bash -lc 'cd ~/v1 && sysbench fileio $COMMON prepare'" 2>&1 | tee task2/p5_folio_hist_v1.txt
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+sudo bpftrace -e 'kprobe:filemap_alloc_folio { @order_v2 = lhist(arg1,0,12,1); }' \
+  -c "bash -lc 'cd ~/v2 && sysbench fileio $COMMON --file-block-size=4M prepare'" 2>&1 | tee task2/p5_folio_hist_v2.txt
+```
+(If `filemap_alloc_folio` isn't probeable or arg1 isn't the order, report what `bpftrace -lv` shows
+and use `__filemap_add_folio`/`folio_alloc` or the tracepoint's `order` field instead.)
+
+### 5b — DECISIVE: is the dTLB/huge-page lever actually worth the gap here?
+Same random 4 KiB reads over an anon mapping, THP ON vs OFF, measured by dTLB-misses + throughput.
+```
+cat > /tmp/thp_rndrd.c <<'EOF'
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+#include <sys/mman.h>
+int main(int argc, char **argv){
+  size_t MB = argc>1?atol(argv[1]):64; int huge = argc>2?atoi(argv[2]):0;
+  size_t sz = MB<<20;
+  char *p = mmap(NULL,sz,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+  if(p==MAP_FAILED){perror("mmap");return 1;}
+  madvise(p,sz, huge?MADV_HUGEPAGE:MADV_NOHUGEPAGE);
+  memset(p,1,sz);                 /* fault in (collapse to THP if huge) */
+  size_t pages = sz/4096; uint64_t s=0,r=0x9e3779b97f4a7c15ULL;
+  size_t iters=200000000;
+  struct timespec a,b; clock_gettime(CLOCK_MONOTONIC,&a);
+  for(size_t i=0;i<iters;i++){ r^=r<<13; r^=r>>7; r^=r<<17; s+=p[(r%pages)*4096]; }
+  clock_gettime(CLOCK_MONOTONIC,&b);
+  double t=(b.tv_sec-a.tv_sec)+(b.tv_nsec-a.tv_nsec)/1e9;
+  fprintf(stderr,"MB=%zu huge=%d reads/s=%.0f sum=%lu\n",MB,huge,iters/t,(unsigned long)s);
+  return 0;
+}
+EOF
+gcc -O2 -o /tmp/thp_rndrd /tmp/thp_rndrd.c
+{ for MB in 64 1024; do for h in 0 1; do
+    echo "=== ${MB}MB huge=$h ==="
+    sudo perf stat -e dTLB-load-misses,cycles,instructions /tmp/thp_rndrd $MB $h
+  done; done; } 2>&1 | tee task2/p5_thp_dtlb_test.txt
+# sanity: confirm THP actually mapped (AnonHugePages>0 for huge=1) — quick check:
+grep -H AnonHugePages /proc/self/smaps_rollup 2>/dev/null | tee -a task2/p5_thp_dtlb_test.txt
+```
+Read: for huge=1 vs huge=0, do dTLB-load-misses drop sharply AND reads/s rise? If the rise is
+~the 8–9% gap (and bigger at 1 GiB) ⇒ mechanism PROVEN: the gap is the huge-page dTLB win that
+file-THP would deliver but `CONFIG_READ_ONLY_THP_FOR_FS=off` blocks. If no benefit ⇒ our dTLB
+story is WRONG — report it, we rethink (maybe LLC/contiguity; also capture LLC-load-misses then).
+Then `./scripts/vmsync "task2 p5 folio hist + THP dTLB proof"`, report files, STOP.
+
 ## Cleanup
 ```
 ( cd ~/v1 && sysbench fileio $COMMON cleanup ); ( cd ~/v2 && sysbench fileio $COMMON cleanup )

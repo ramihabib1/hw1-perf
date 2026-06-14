@@ -169,4 +169,9 @@ Root cause = prepare block size sets page-cache folio order: v2 4M writes build 
 folios (proven by histogram), v1 stays 16 KiB. The 8–9% is the dTLB win from PMD-MAPPING v2's huge
 folios; structurally disabled here (CONFIG_READ_ONLY_THP_FOR_FS unset → do_set_pmd never fires →
 FilePmdMapped=0 → 4K PTEs → dTLB unchanged), so only the ~1% fault term reproduces. Fragmentation
-ruled out (zero disk I/O). Open: dTLB magnitude unmeasured (5b didn't engage THP). Writeup: task2.md.
+ruled out (zero disk I/O). Writeup: task2.md.
+- **dTLB magnitude MEASURED [p5c]:** same random-read pattern, 2 MiB hugetlb vs 4 KiB → dTLB-misses
+  194.7M→2.7K (256M) / 198.8M→13.6K (1G), throughput +12.7% (256M) / +20.2% (1G). Brackets the 8–9%.
+  PMD mapping IS worth the gap on this CPU; v2 just can't reach it (file-cache PMD gated off). Chain
+  fully evidenced (no link assumed). Caveat: anon MADV_COLLAPSE/THP didn't engage on this kernel
+  (EINVAL); hugetlb used as the reliable toggle.

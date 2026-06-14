@@ -1,58 +1,54 @@
 #!/usr/bin/env python3
-"""Assemble a self-contained writeup/SUBMISSION.md:
-   cover + Task 1 + Task 2 analysis, then an Appendix embedding every command
-   (runbooks) and every raw log/output file — so the single PDF contains everything
-   the assignment asks for ("logs of all commands executed and their outputs").
-Run: python3 scripts/assemble_submission.py  (then build_submission_pdf.py)
+"""Assemble writeup/SUBMISSION.md: cover + Task 1 + Task 2 + a SHORT appendix of the key
+raw logs that back the conclusions. Run: python3 scripts/assemble_submission.py
 """
-import os, glob
+import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-W = os.path.join(ROOT, "writeup")
-OUT = os.path.join(W, "SUBMISSION.md")
+OUT = os.path.join(ROOT, "writeup", "SUBMISSION.md")
 
 def read(p):
     with open(os.path.join(ROOT, p), encoding="utf-8", errors="replace") as f:
         return f.read()
 
-def fenced(path):
-    """Embed a file's literal content in a ~~~~ fence (safe around inner ``` blocks)."""
-    body = read(path).rstrip("\n")
-    return f"### `{path}`\n\n~~~~text\n{body}\n~~~~\n"
+# Only the logs actually referenced by the analysis — keeps the document short.
+TASK1_LOGS = [
+    ("logs/task1_20260610_1427.log", "baseline: lat_pipe x10, no-load then with-load"),
+    ("task1/p2_perfstat_noload.txt", "perf stat, no load (frequency check)"),
+    ("task1/p2_perfstat_load.txt",   "perf stat, with load"),
+    ("task1/p2_pin1core_noload.txt", "both pipe ends pinned to one core"),
+    ("task1/p2b_pin2core_idle.txt",  "two cores, allowed to idle"),
+    ("task1/p2b_pin2core_busy.txt",  "two cores, kept busy"),
+    ("task1/p4_offcpu_hist_noload.txt", "off-CPU latency histogram, no load"),
+    ("task1/p4_offcpu_hist_load.txt",   "off-CPU latency histogram, with load"),
+    ("task1/p4_callgraph_noload.txt",   "perf sched callgraph, no load"),
+]
+TASK2_LOGS = [
+    ("task2/p10_reboot_confirmed.txt", "the reproduced gap + perf stat (dTLB) + smaps (FilePmdMapped)"),
+    ("task2/p5_folio_hist_v1.txt", "folio-order histogram, v1"),
+    ("task2/p5_folio_hist_v2.txt", "folio-order histogram, v2"),
+    ("task2/p1b_filefrag.txt",     "filefrag (fragmentation is trivial)"),
+    ("task2/p2_perfstat_v1.txt",   "perf stat v1 (page-faults are all minor -> fully cached)"),
+]
 
-parts = [read("writeup/00-cover.md"), "\n---\n", read("writeup/task1.md"),
-         "\n---\n", read("writeup/task2.md")]
-
-# Appendix A — the commands (runbooks document every command, per phase)
-parts.append("\n---\n\n# Appendix A — Commands Executed (Runbooks)\n\n"
-             "Every command run in this investigation, organised by phase. Outputs are in "
-             "Appendix B.\n")
-for rb in ["task1/RUNBOOK.md", "task2/RUNBOOK.md"]:
-    parts.append(f"\n## `{rb}`\n\n~~~~markdown\n{read(rb).rstrip()}\n~~~~\n")
-
-# Appendix B — every raw log / tool output
-parts.append("\n---\n\n# Appendix B — Raw Logs and Tool Outputs\n")
-
-def collect(globs):
-    files = []
-    for g in globs:
-        files += sorted(glob.glob(os.path.join(ROOT, g)))
-    out = []
-    for f in files:
-        rel = os.path.relpath(f, ROOT)
-        if os.path.getsize(f) == 0:        # skip empty (e.g. stderr-only baseline files)
+def appendix(title, items):
+    out = [f"\n## {title}\n"]
+    for path, desc in items:
+        if not os.path.exists(os.path.join(ROOT, path)):
             continue
-        out.append(rel)
-    return out
+        body = read(path).rstrip("\n")
+        out.append(f"\n### {path}\n*{desc}*\n\n~~~~text\n{body}\n~~~~\n")
+    return "".join(out)
 
-parts.append("\n## Task 1 — raw output\n")
-for rel in collect(["logs/task1_*.log", "task1/*.txt"]):
-    parts.append("\n" + fenced(rel))
-
-parts.append("\n## Task 2 — raw output\n")
-for rel in collect(["logs/task2_*.log", "task2/*.txt"]):
-    parts.append("\n" + fenced(rel))
+parts = [
+    read("writeup/00-cover.md"), "\n---\n",
+    read("writeup/task1.md"), "\n---\n",
+    read("writeup/task2.md"), "\n---\n",
+    "\n# Appendix: raw command outputs\n",
+    appendix("Task 1", TASK1_LOGS),
+    appendix("Task 2", TASK2_LOGS),
+]
 
 with open(OUT, "w", encoding="utf-8") as f:
     f.write("".join(parts))
-print("wrote", OUT, "(", sum(p.count(chr(10)) for p in parts), "lines )")
+print("wrote", OUT)

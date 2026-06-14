@@ -1,0 +1,100 @@
+=== 256MB mode=0 ===
+mode=0 MB=256 AnonHugePages_kB=0
+mode=0 MB=256 reads/s=62759989 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 0':
+
+         194681566      dTLB-load-misses                                                      
+        8881399109      cycles                                                                
+        3731522806      instructions                                                          
+
+       3.359090688 seconds time elapsed
+
+       3.192268000 seconds user
+       0.164014000 seconds sys
+
+
+=== 256MB mode=1 ===
+MADV_COLLAPSE failed: Invalid argument
+mode=1 MB=256 AnonHugePages_kB=0
+mode=1 MB=256 reads/s=62624913 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 1':
+
+         194680010      dTLB-load-misses                                                      
+        8903528253      cycles                                                                
+        3725908083      instructions                                                          
+
+       3.365086766 seconds time elapsed
+
+       3.205633000 seconds user
+       0.158970000 seconds sys
+
+
+=== 1024MB mode=0 ===
+mode=0 MB=1024 AnonHugePages_kB=0
+mode=0 MB=1024 reads/s=56452905 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 0':
+
+         198810736      dTLB-load-misses                                                      
+       11112291706      cycles                                                                
+        4656052798      instructions                                                          
+
+       4.230569558 seconds time elapsed
+
+       3.592510000 seconds user
+       0.636054000 seconds sys
+
+
+=== 1024MB mode=1 ===
+MADV_COLLAPSE failed: Invalid argument
+mode=1 MB=1024 AnonHugePages_kB=0
+mode=1 MB=1024 reads/s=56409139 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 1':
+
+         198815712      dTLB-load-misses                                                      
+       11153220204      cycles                                                                
+        4654098855      instructions                                                          
+
+       4.242477699 seconds time elapsed
+
+       3.609043000 seconds user
+       0.632823000 seconds sys
+
+
+HugePages_Total:     600
+HugePages_Free:      600
+=== 256MB mode=2 (MAP_HUGETLB) ===
+mode=2 MB=256 AnonHugePages_kB=0 (hugetlb: see HugePages_Free)
+mode=2 MB=256 reads/s=70738072 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 256 2':
+
+              2753      dTLB-load-misses                                                      
+        7657971203      cycles                                                                
+        3429336113      instructions                                                          
+
+       2.883778716 seconds time elapsed
+
+       2.859685000 seconds user
+       0.020998000 seconds sys
+
+
+=== 1024MB mode=2 (MAP_HUGETLB) ===
+mode=2 MB=1024 AnonHugePages_kB=0 (hugetlb: see HugePages_Free)
+mode=2 MB=1024 reads/s=67850882 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd2 1024 2':
+
+             13578      dTLB-load-misses                                                      
+        8412641647      cycles                                                                
+        3455270546      instructions                                                          
+
+       3.159761606 seconds time elapsed
+
+       3.075510000 seconds user
+       0.081935000 seconds sys
+
+

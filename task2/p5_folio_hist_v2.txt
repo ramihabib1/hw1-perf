@@ -1,0 +1,27 @@
+# 5a folio-order histogram — v2 (4M prepare)
+# Same probe substitution as v1: tracepoint:filemap:mm_filemap_add_to_page_cache, field 'order'.
+#       Histogram bucket = folio order (0=4K,1=8K,2=16K,...,9=2M PMD). File removed pre-prepare so writes run.
+# kernel: 7.0.0-15-generic   Sun Jun 14 11:42:10 UTC 2026
+
+Attached 1 probe
+sysbench 1.0.20 (using system LuaJIT 2.1.1761786044)
+
+1 files, 65536Kb each, 64Mb total
+Creating files for the test...
+Extra file open flags: (none)
+Creating file test_file.0
+67108864 bytes written in 0.04 seconds (1467.75 MiB/sec).
+
+
+@order_v2:
+[0]                 2870 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
+[1]                    0 |                                                    |
+[2]                    0 |                                                    |
+[3]                    0 |                                                    |
+[4]                    0 |                                                    |
+[5]                    0 |                                                    |
+[6]                    0 |                                                    |
+[7]                    0 |                                                    |
+[8]                    0 |                                                    |
+[9]                   32 |                                                    |
+

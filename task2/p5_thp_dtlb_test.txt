@@ -1,0 +1,105 @@
+# 5b — anon random-read, THP ON vs OFF, dTLB-load-misses + throughput
+# program controls THP per-mapping via madvise(MADV_HUGEPAGE/NOHUGEPAGE); 200M random 4K-strided reads.
+# global THP: [always] madvise never   kernel: 7.0.0-15-generic   Sun Jun 14 11:42:54 UTC 2026
+
+=== 64MB huge=0 ===
+MB=64 huge=0 reads/s=89734904 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd 64 0':
+
+         178044444      dTLB-load-misses                                                      
+        6031323640      cycles                                                                
+        3485579446      instructions                                                          
+
+       2.275540705 seconds time elapsed
+
+       2.233620000 seconds user
+       0.040011000 seconds sys
+
+
+
+=== 64MB huge=1 ===
+MB=64 huge=1 reads/s=92780363 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd 64 1':
+
+         178067422      dTLB-load-misses                                                      
+        5835230177      cycles                                                                
+        3485566318      instructions                                                          
+
+       2.200230156 seconds time elapsed
+
+       2.153529000 seconds user
+       0.045990000 seconds sys
+
+
+
+=== 1024MB huge=0 ===
+MB=1024 huge=0 reads/s=57789639 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd 1024 0':
+
+         198811347      dTLB-load-misses                                                      
+       10882728665      cycles                                                                
+        4550870680      instructions                                                          
+
+       4.145990515 seconds time elapsed
+
+       3.513013000 seconds user
+       0.631916000 seconds sys
+
+
+
+=== 1024MB huge=1 ===
+MB=1024 huge=1 reads/s=57987552 sum=200000000
+
+ Performance counter stats for '/tmp/thp_rndrd 1024 1':
+
+         198705721      dTLB-load-misses                                                      
+       10848295121      cycles                                                                
+        4544993855      instructions                                                          
+
+       4.133136746 seconds time elapsed
+
+       3.490054000 seconds user
+       0.641852000 seconds sys
+
+
+
+
+# ============================================================
+# SANITY CHECK — did THP actually map? (the runbook's read depends on this)
+# ------------------------------------------------------------
+# The runbook's sanity line greps /proc/self/smaps_rollup — but that is the
+# grep/shell process, NOT the test, so it can never confirm the test's mapping.
+# Corrected check below inspects the test program's OWN mapping.
+#
+# Result: AnonHugePages = 0 kB for BOTH huge=1 and huge=0, at 64 MiB and 1 GiB.
+#   - polled test's /proc/PID/smaps_rollup mid-run (1024MB huge=1): AnonHugePages 0 kB
+#   - self-inspecting probe right after memset (64MB):  huge=1 -> 0 kB,  huge=0 -> 0 kB
+#
+# => THP was NEVER mapped. The MADV_HUGEPAGE "huge=1" run used 4 KiB base pages,
+#    same as huge=0. That is WHY dTLB-load-misses are identical (178M/178M at 64M,
+#    198M/198M at 1G) and reads/s barely move (+3% / +0.3%).
+#
+# CONCLUSION: 5b as written is INCONCLUSIVE on this kernel — the dTLB/huge-page
+# lever was never actually pulled, so this run neither proves NOR disproves the
+# dTLB story. It is NOT evidence that the dTLB lever is worthless.
+#
+# Why THP did not map (environment facts gathered, all point AT the kernel, not the test):
+#   - mmap base IS 2 MiB-aligned (0x...600000)            -> alignment not the cause
+#   - top-level enabled = [always]                         -> THP on as shipped
+#   - hugepages-2048kB/enabled = [inherit] -> follows always-> PMD mTHP enabled
+#   - defrag = [madvise] (as-shipped); also retried defrag=always + compact_memory
+#   - free memory 6.6 GiB                                  -> not a fragmentation/OOM block
+#   - global anon THP IS functional: vmstat thp_fault_alloc=6634, thp_fault_fallback=0
+#   - BUT our mapping records ZERO thp_fault_alloc delta + ZERO fallback
+#     -> the anon fault path is not even ATTEMPTING a huge page for this mmap.
+#
+# OPEN QUESTION for the student (final connection, per CLAUDE.md):
+#   why does the fault path skip PMD-THP for a 2M-aligned MADV_HUGEPAGE anon region
+#   on kernel 7.0.0-15 when it succeeds for other processes? (khugepaged-over-time
+#   collapse not yet tested — interrupted.) Until 5b actually maps THP, the
+#   "huge-page dTLB win" claim from Phase 4 remains UNPROVEN here.
+#
+# (knobs left as-shipped: enabled=always, defrag=madvise)

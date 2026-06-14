@@ -1,0 +1,21 @@
+# 5a folio-order histogram — v1 (4K prepare)
+# NOTE: kprobe:filemap_alloc_folio NOT probeable on this kernel (inlined).
+#       Documented fallback: tracepoint:filemap:mm_filemap_add_to_page_cache, field 'order' (verified via -lv).
+#       Histogram bucket = folio order (0=4K page,1=8K,2=16K,...,9=2M PMD). File removed pre-prepare so writes run.
+# kernel: 7.0.0-15-generic   Sun Jun 14 11:42:00 UTC 2026
+
+Attached 1 probe
+sysbench 1.0.20 (using system LuaJIT 2.1.1761786044)
+
+1 files, 65536Kb each, 64Mb total
+Creating files for the test...
+Extra file open flags: (none)
+Creating file test_file.0
+67108864 bytes written in 0.05 seconds (1254.36 MiB/sec).
+
+
+@order_v1:
+[0]                 3027 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@              |
+[1]                    0 |                                                    |
+[2]                 4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
+
